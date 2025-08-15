@@ -23,6 +23,7 @@ Use filter(sc_ic == 1) to select IntCa
 ```{r}
 library(tidyverse)
 library(haven)
+library(dplyr)
 ```
 
 ```{r setup, include=FALSE}
@@ -79,7 +80,7 @@ cohort1 <- cohort1 |>
 ## cols FH_BC_bl_median:FH_hboc_in_bl_40 means the number of relative below certain age, and 0 means 0 rel below median age but they are diagnosed
 ## transformation: group 2 or more together
 ##                 compute so 0=no FH, and 1=FH, no early-onset, 2=1 or more early-onset (0 is when n_sr>=1, otherwise NA)
-library(tidyverse)
+
 
 # Transform the specified columns using tidyverse functions
 cohort1 <- cohort1 %>%
@@ -221,9 +222,14 @@ cohort2 <- pat[, covar] |>
 
 cohort2 <- cohort2 |> 
   mutate(diadat = bc_diagdate)
+
+# study criteria
+cohort2 <- cohort2 |> 
+ filter(cohort == "libro1" | (cohort == "karma" & bc_diagdate >= ymd("2005-01-01") & bc_diagdate <= ymd("2022-05-07"))) |>
+  filter(detection_mode %in% c(1,2))
 ```
 
-## common data
+## common data (not done Aug 15)
 ### updated calcs and masses in calcs_masses_2506.R
 ```{r}
 oldcols <- c("cad_date", "calcs", "masses", "mammography_date", "calcs_l_nbr", "calcs_r_nbr", "masses_l_nbr", "masses_r_nbr") # mammography_date is not date for pd, which is pd_date
@@ -294,14 +300,14 @@ getwd()
 ### GRS and ptv (karma and libro combined data)
 ```{r}
 library(readr)
-grs <- read_delim("~/LIBRO1_BCSTO/Karma_Libro1/Data_other/GRS_BC_Yuqi/Libro1KARMA_newGRS_Yuqi.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE)
+grs <- read_delim("/Users/yuqzha/LIBRO1_BCSTO/Karma_Libro1/Data_other/GRS_BC_Yuqi/Libro1KARMA_newGRS_Yuqi.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE)
  
 grs <- grs |> filter(!is.na(GRS_BC)) ## 29105 left, 46865 removed
 
 grs <- grs |> filter(QC == "Passed QC") ## 20469 left
 length(unique(grs$studiepersonid))
 
-ptv <- read_delim("~/LIBRO1_BCSTO/Karma_Libro1/Data_other/PTV_from_Juan/KARMA_Libro1_PTVs_noDUP_For_Yuqi.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE)
+ptv <- read_delim("/Users/yuqzha/LIBRO1_BCSTO/Karma_Libro1/Data_other/PTV_from_Juan/KARMA_Libro1_PTVs_noDUP_For_Yuqi.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE)
 
 ```
 
@@ -375,7 +381,9 @@ medrec <- read_sas("2025-02-20/medical_records_prework.sas7bdat", .name_repair =
 
 rcc <- bind_rows(rcc1, rcc2)
 nkbc <- bind_rows(nkbc1,nkbc2)
+```
 
+```{r}
 # data required, rcc, nkbc, cohort (id, diadat)
 cohort <- cohort2
 source("0 DATA treatment.R")
