@@ -2,7 +2,9 @@
 title: "1.1 Table1"
 author: "Yuqi Zhang"
 date: "2025-08-15"
-output: github_document
+output:
+  html_document:
+    keep_md: true
 ---
 
 ```{r}
