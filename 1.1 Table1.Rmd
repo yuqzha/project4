@@ -2,31 +2,50 @@
 title: "1.1 Table1"
 author: "Yuqi Zhang"
 date: "2025-08-15"
-output: html_document
+output:
+  word_document: default
+  html_document: default
 ---
+```{r}
+load("/Users/yuqzha/LIBRO1_BCSTO/IC_timing_prognosis/data/cohorts.RData")
+```
+
+```{r}
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+```
 
 ```{r setup, include=FALSE}
 source("FUN_desc_table.R")
 
 factors1 <- c("year1","period", "parity","age_1st_child", "Education_2cat", "FH_BC_bl_50") 
-tc <- c("T_pad_c",  "N_pad_positive", "ER_negative", "grade")
+tc <- c("T_pad_c", "N_pad_positive", "grade", "ER_negative", "PR_negative", "HER2_positive", "ki67", "histology")
 trt <- c("post_chemo", "post_radio", "post_endo") 
 
 factor2_cont <- c("Alcohol_day", "smoking_packyears")
 factors2 <- c("pd_3group","pd_BIRADs","bmi_cat", "risk_breastcancer_own_10yr","GRS_BC", "protein_LOF_rare_variants_exonic", "pinkcat","BOADICEA")
-
-table1p1 <- create_descriptive_table(
+```
+```{r}
+create_descriptive_table(
   data = cohort1,
   group_var = "detection_mode",
   continuous_vars = c(),
-  factor_vars = c(factors1)
+  factor_vars = c(factors1, tc, trt),
+  use_median = TRUE,  # Use median/IQR instead of mean/SD
+  digits = 2,         # Number of decimal places
+  exact_tests = FALSE # Use exact tests when appropriate
 )
-
-table1p2 <- create_descriptive_table(
+```
+```{r}
+create_descriptive_table(
   data = cohort2,
   group_var = "detection_mode",
   continuous_vars = c(factor2_cont),
-  factor_vars = c(factors2)
+  factor_vars = c(factors2),
+  use_median = TRUE,  # Use median/IQR instead of mean/SD
+  digits = 2,         # Number of decimal places
+  exact_tests = FALSE # Use exact tests when appropriate
 )
 ```
 
