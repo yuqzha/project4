@@ -1,0 +1,321 @@
+---
+title: "3.2 OR by density"
+author: "Yuqi Zhang"
+date: "2025-04-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+```
+
+## by density
+
+```{r}
+factors2 <- c("T_pad_c", "N_pad_positive", "grade", "ER_negative", "PR_negative", "HER2_positive", "ki67", "histology")
+
+cohort <- cohort2 %>%
+  filter(detection_mode %in% c(1,2)) |> 
+  filter(abs(bc_diagdate - pd_date) <= 364.25*2) |> # mammogram date within 2y
+  # filter(!is.na(pd_3group)) |> 
+  mutate(across(all_of(factors2), factor)) # |> filter(M_stage != 1)
+```
+
+## strata by pd
+```{r}
+cohort <- cohort |> 
+  filter(pd_3group %in% c("[0,20]", "(40,100]")) |> 
+  mutate(pd_3group = factor(pd_3group, levels = c("[0,20]","(40,100]"))) 
+# A+B, C,D
+cohort <- cohort |> 
+  mutate(
+    pd_BIRADs = case_when(
+      pd_BIRADs %in% c("[0,2]", "(2,18]") ~ "A+B",
+      pd_BIRADs == "(18,49]" ~ "C",
+      pd_BIRADs == "(49,100]" ~ "D",
+    ),
+    pd_BIRADs = factor(pd_BIRADs, levels = c("A+B", "C","D"))
+  )
+
+# A+B, C+D
+cohort <- cohort |> 
+  mutate(
+    pd_BIRADs = case_when(
+      pd_BIRADs %in% c("[0,2]", "(2,18]") ~ "A+B",
+      TRUE ~ "C+D"
+    )
+  )
+
+# Then run the analysis
+results <- univariable_logistic(data = cohort, 
+                                         group_var = "pd_3group",#"pd_BIRADs",#"pd_3group", #"sc_ic", 
+                                         outcome_var =  "sc_ic", 
+                                         predictor_vars = factors2) 
+print(results)
+# Check what terms are actually generated
+print(unique(results$term))
+```
+## filter results in terms
+```{r}
+source("OR_tc_filter_results.R")
+```
+
+
+by pd strata
+```{r}
+filtered_results <- filtered_results |> 
+    mutate(
+    est = case_when(
+      term == "histologylobular" & pd_3group == "[0,20]" ~ 1.11, 
+      term == "histologylobular" & pd_3group == "(40,100]" ~ 1.66, 
+      term == "N_pad_positive1" & pd_3group == "(40,100]"~ 1.56,
+      term == "ki673" & pd_3group == "(40,100]"~ 2.03,
+      TRUE ~ est),
+    min95 = case_when(
+       term == "histologylobular" & pd_3group == "[0,20]"~ 0.70, 
+       term == "histologylobular" & pd_3group == "(40,100]"~ 0.86, 
+       term == "T_pad_c2" & pd_3group == "(40,100]"~ 0.90,
+       term == "N_pad_positive1" & pd_3group == "(40,100]"~ 0.98,
+       term == "ki673" & pd_3group == "(40,100]"~ 0.95,
+       TRUE ~ min95),
+     max95 = case_when(
+       term == "histologylobular" & pd_3group == "[0,20]"~ 1.72, 
+       term == "histologylobular" & pd_3group == "(40,100]"~  3.29, 
+       term == "T_pad_c2" & pd_3group == "(40,100]"~ 6.78,
+       term == "ki673" & pd_3group == "(40,100]"~ 3.98,
+       TRUE ~ max95),
+    p.value= case_when(
+       term == "T_pad_c2" & pd_3group == "(40,100]"~ 0.06,
+       term == "N_pad_positive1" & pd_3group == "(40,100]"~ 0.06,
+       term == "ki673" & pd_3group == "(40,100]"~ 0.06,
+      TRUE ~ p.value)
+   # p.value = ifelse(term %in% c("histologylobular", "pd_3group[0,20]"), 0.01, p.value),
+  # max95 = ifelse(term == "pd_3group[0,20]", 1.00, max95) 
+  )
+
+filtered_results <- filtered_results |> 
+  mutate(
+    association = case_when(
+      est > 1 & p.value < 0.05 ~ "Positive",
+      est < 1 & p.value < 0.05 ~ "Negative",
+      TRUE ~ "NS"))
+```
+
+
+```{r}
+## label facet
+pd_3group_label <- c(
+  "[0,20]" = "Low density (<=20%)",
+  "(20,40]" = "Medium density (20-40%)",
+  "(40,100]" = "High density (>40%)"
+)
+
+pd_2group_label <- c(
+  "[0,20]" = "Low density (<=20%)",
+  "(20,100]" = "High density (>20%)"
+)
+```
+### only low and high
+```{r}
+filtered_results <- filtered_results |> 
+  filter(pd_3group %in% c("[0,20]", "(40,100]"))
+```
+
+### age plot
+```{r}
+scic_label <- c(
+  "0" = "ScrCa",
+  "1"= "IntCa"
+)
+
+OR_pd <- ggplot(filtered_results, 
+                     aes(x = reorder(label, -order), y = est, color = association)) +
+  theme_bw(base_size = 12) +
+scale_y_log10(
+    limits = c(0.25, 40),  # Adjust these limits based on your actual data range
+    breaks = c(0.1, 0.2, 0.5, 1, 2, 5)) +
+  geom_hline(yintercept = 1, linetype = 5, color = "grey") +
+  geom_point(position = position_dodge(width = 0.5), shape = 17, size = 2) +
+  geom_errorbar(aes(ymin = min95, ymax = max95), 
+                position = position_dodge(width = 0.5),
+                width = 0.2, size = 0.5) +
+  # Add text with formatted OR and CI
+  geom_text(
+    aes(y = 11,
+      label = sprintf("%.2f (%.2f, %.2f)", est, min95, max95),
+      color = association),
+    position = position_dodge(width = 0.5),
+    hjust = 0,  # Align text to the left
+    vjust = 0.5,  # Center vertically
+    size = 3
+  ) +
+  labs(title = "OR of low density (<=20%) vs. high density (>40%)",
+       x="",
+  y="Odds ratio") +
+  coord_flip() +
+  facet_grid(.~ pd_3group) + # pd_3group, labeller = labeller(pd_3group = pd_3group_label)) +
+  scale_color_manual(values = c(
+    "Positive" = "maroon",
+    "Negative" = "forestgreen",
+    "NS" = "grey40"
+  ), guide = guide_legend(title = "", order = 1)) +
+    theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.spacing.y = unit(0.2, "cm"),
+    legend.justification = "center",      # Align entire legend box to left
+    legend.box.just = "center",           # Align legend box content to left
+    plot.margin = margin(10, 10, 10, 10) # Add margins to ensure legend fits
+  )
+
+print(OR_pd)
+```
+
+## strata by calc
+```{r}
+# Then run the analysis
+results2_strata <- univariable_logistic(data = cohort, 
+                                         group_var = "calcs_bi", 
+                                         outcome_var = "sc_ic", 
+                                         predictor_vars = factors2) 
+print(results2_strata)
+# Check what terms are actually generated
+print(unique(results2_strata$term))
+```
+```{r}
+## run chunk line 77
+calc_label <- c(
+  "0" = "No microcalcification",
+  ">=1" = "Microcalcification >=1"
+)
+
+filtered_results <- filtered_results |> 
+  filter(calcs_bi %in% c("0", ">=1"))
+
+OR_calc <- ggplot(filtered_results, 
+                     aes(x = reorder(label, -order), y = est, color = association)) +
+  theme_bw(base_size = 12) +
+scale_y_log10(
+    limits = c(0.28, 300),  # Adjust these limits based on your actual data range
+    breaks = c(0.1, 0.2, 0.5, 1, 2, 5)) +
+  geom_hline(yintercept = 1, linetype = 5, color = "grey") +
+  geom_point(position = position_dodge(width = 0.5), shape = 17, size = 2) +
+  geom_errorbar(aes(ymin = min95, ymax = max95), 
+                position = position_dodge(width = 0.5),
+                width = 0.2, size = 0.5) +
+  # Add text with formatted OR and CI
+  geom_text(
+    aes(y = 13,
+      label = sprintf("%.2f (%.2f, %.2f)", est, min95, max95),
+      color = association),
+    position = position_dodge(width = 0.5),
+    hjust = 0,  # Align text to the left
+    vjust = 0.5,  # Center vertically
+    size = 3.5
+  ) +
+  labs(title = "OR of interval cancer vs. screen-detected cancer",
+       x="",
+  y="Odds ratio") +
+  coord_flip() +
+  facet_grid(.~calcs_bi, labeller = labeller(calcs_bi = calc_label)) +
+  scale_color_manual(values = c(
+    "Positive" = "maroon",
+    "Negative" = "forestgreen",
+    "NS" = "grey40"
+  ), guide = guide_legend(title = "", order = 1)) +
+    theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.spacing.y = unit(0.2, "cm"),
+    legend.justification = "center",      # Align entire legend box to left
+    legend.box.just = "center",           # Align legend box content to left
+    plot.margin = margin(10, 10, 10, 10) # Add margins to ensure legend fits
+  )
+
+print(OR_calc)
+```
+```{r}
+OR_tc_by_calcs <- filtered_results
+```
+
+## strata by masses
+```{r}
+# Then run the analysis
+
+cohort <- cohort |> 
+  mutate(masses_mean2cat = case_when(
+      masses == 0 ~ 0, 
+      masses >= 1 ~ 1),
+    masses_mean2cat = factor(masses_mean2cat, labels = c("0", ">=1")))
+
+results2_strata <- univariable_logistic(data = cohort, 
+                                         group_var = "sc_ic",  
+                                         outcome_var = "masses_mean2cat",
+                                         predictor_vars = factors2) 
+print(results2_strata)
+# Check what terms are actually generated
+print(unique(results2_strata$term))
+```
+```{r}
+# run line 77 
+
+mass_label <- c(
+  "0" = "No mass",
+  ">=1" = "Mass >=1"
+)
+
+filtered_results <- filtered_results |> 
+  filter(!is.na(sc_ic))
+
+OR_mass <- ggplot(filtered_results, 
+                     aes(x = reorder(label, -order), y = est, color = association)) +
+  theme_bw(base_size = 12) +
+scale_y_log10(
+    limits = c(0.14, 300),  # Adjust these limits based on your actual data range
+    breaks = c(0.1, 0.2, 0.5, 1, 2, 5)) +
+  geom_hline(yintercept = 1, linetype = 5, color = "grey") +
+  geom_point(position = position_dodge(width = 0.5), shape = 17, size = 2) +
+  geom_errorbar(aes(ymin = min95, ymax = max95), 
+                position = position_dodge(width = 0.5),
+                width = 0.2, size = 0.5) +
+  # Add text with formatted OR and CI
+  geom_text(
+    aes(y = 13,
+      label = sprintf("%.2f (%.2f, %.2f)", est, min95, max95),
+      color = association),
+    position = position_dodge(width = 0.5),
+    hjust = 0,  # Align text to the left
+    vjust = 0.5,  # Center vertically
+    size = rel(1.5)
+  ) +
+  labs(title = "OR of masses (mean of both sides) >=1 vs. 0",
+       x="",
+  y="Odds ratio") +
+  coord_flip() +
+  facet_grid(.~sc_ic, labeller = labeller(sc_ic = scic_label)) + #masses_bi, labeller = labeller(masses_bi = mass_label)
+  scale_color_manual(values = c(
+    "Positive" = "maroon",
+    "Negative" = "forestgreen",
+    "NS" = "grey40"
+  ), guide = guide_legend(title = "", order = 1)) +
+    theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.spacing.y = unit(0.2, "cm"),
+    legend.justification = "center",      # Align entire legend box to left
+    legend.box.just = "center",           # Align legend box content to left
+    plot.margin = margin(10, 10, 10, 10) # Add margins to ensure legend fits
+  )
+
+print(OR_mass)
+```
+```{r}
+OR_tc_by_mass <- filtered_results
+```
+

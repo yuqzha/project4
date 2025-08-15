@@ -1,0 +1,398 @@
+---
+title: "Untitled"
+author: "Yuqi Zhang"
+date: "2025-04-10"
+output: html_document
+---
+
+**Purpose** To understand interval breast cancer phenotype and prognosis, through timing since last screening and breast density
+
+**Population** 
+1. large cohort of patients with detection mode known (BCSTO). Specifically, the patients with their **first BC diagnosis as IntCa or ScrCa** were included, also named **cohort1** in this project. The IntCa or ScrCa were between 1989 Jan to 2020 Mar, and the outcome of death and other cancers were until end of 2023.
+
+Based on cohort1, **cohort1_ic** was defined using filter(outcome_IC==1) for the study on solely IC over timing.
+
+2. small cohort of patients with additional mammography info (**Libro1 + Karma**), also named **cohort2** in this project.
+
+cohort2 is patients diagnosed until 2023.10 combined from two cohorts, with duplicates between two cohorts removed. Data contain basic cols that exist in both, with the exception of calcs and masses, which only exist in karma.
+
+Use filter(cohort == "karma"/"libro1") to select cohort
+
+Use filter(sc_ic == 1) to select IntCa
+
+```{r}
+library(tidyverse)
+library(haven)
+```
+
+```{r setup, include=FALSE}
+## load previously prepared dataset
+load("/Users/yuqzha/LIBRO1_BCSTO/Stockholm women/Data/Data_output/workdata.Rdata")
+cohort1 <- workdata |> 
+  filter(outcome_IC==1 | outcome_SDC==1) |> 
+  mutate(
+         ben = ifelse(ben == "3", "insitu", "invasive"),
+         ben = factor(ben, levels = c("invasive", "insitu")),
+         histology = case_when(
+           snomedo10_c %in% c(85003, 85233) ~ "ductal",
+           snomedo10_c == 85203 ~ "lobular",
+          #snomedo10_c == 85223 ~ "duc+lob" ## N=0 in the current data
+          TRUE ~ "Other"
+         ),
+         histology = ifelse(
+           !is.na(snomedo10_c), histology, NA
+         ),
+         HER2_positive = case_when(
+           HER2_negative == 0 ~ 1,
+           HER2_negative == 1 ~ 0,
+           TRUE ~ NA_real_
+         ),
+    age_cat = case_when(
+           age_at_diagnosis>=40 & age_at_diagnosis < 50 ~ "40-49",
+           age_at_diagnosis>=50 & age_at_diagnosis < 60 ~ "50-59",
+           age_at_diagnosis>=60 & age_at_diagnosis < 75 ~ "60-74"
+         ),
+    month = as.factor(floor(diff_days / 30)), # months since screening
+    year_since_screen = ifelse(is.na(diff_days), NA, # diff_days is the interval
+                                    ifelse(diff_days <= 365, 0, 1)),
+    year_since_screen = factor(year_since_screen),
+    year = as.numeric(year(diadat))
+    ) |> 
+  relocate(HER2_positive, .before = grade) |> 
+  relocate(ki67, .after = grade) |> 
+  relocate(histology, .after =ki67)
+
+cohort1_ic <- cohort1 |> 
+  filter(outcome_IC==1)
+```
+## FH, more details
+### cohort1
+```{r}
+load("/Users/yuqzha/LIBRO1_BCSTO/Stockholm women/Data/Data_output/FH_HBOC_age.Rdata")
+
+## if var already exist
+cohort1 <- cohort1 |> select(!FH_BC_bl_median:FH_hboc_in_bl_40)
+
+cohort1 <- cohort1 |> 
+  left_join(FH_hboc_age, by = "id")
+
+## cols FH_BC_bl_median:FH_hboc_in_bl_40 means the number of relative below certain age, and 0 means 0 rel below median age but they are diagnosed
+## transformation: group 2 or more together
+##                 compute so 0=no FH, and 1=FH, no early-onset, 2=1 or more early-onset (0 is when n_sr>=1, otherwise NA)
+library(tidyverse)
+
+# Transform the specified columns using tidyverse functions
+cohort1 <- cohort1 %>%
+  mutate(across(
+    # Select columns from FH_BC_bl_median to FH_hboc_in_bl_40
+    .cols = FH_BC_bl_median:FH_hboc_in_bl_40,
+    .fns = function(x) {
+      # 1. Group numbers larger than 1 into 1
+      x <- if_else(x > 1, 1, x, missing = x)
+      
+      # 2. Add 1 to all values
+      x <- x + 1
+      
+      # 3. Replace NA with 0 when n_p_sib >= 1, otherwise keep as NA
+      x <- if_else(!is.na(n_1sr) & n_1sr >= 1, 
+                  if_else(is.na(x), 0, x),
+                  NA)
+      x <- factor(x)
+      return(x)
+    }
+  ))
+```
+
+
+## education
+```{r}
+library(haven)
+otherfactors <- read_sas("/Users/yuqzha/LIBRO1_BCSTO/Data/fromQiaoli/for_yuqizhang_allvar.sas7bdat")
+
+cohort1 <- cohort1 |> 
+  left_join(otherfactors, join_by(id == studieid)) 
+  
+cohort1 <- cohort1 |>
+  mutate(Education = factor(Education),
+         age_1st_child = case_when(age_child_min<30 & age_child_min>0 ~ "<30",
+                                   age_child_min>=30 ~ ">=30",
+                                   age_child_min==0 ~ "None"),
+         age_1st_child = factor(age_1st_child, levels = c("None","<30", ">=30")))
+```
+
+## treatments
+```{r}
+setwd("/Users/yuqzha/LIBRO1_BCSTO/Stockholm women/Data/Quality cancer registers")
+rcc <- read_sas("rccsthlm_index.sas7bdat", .name_repair = tolower) |> 
+  rename(id = starts_with("studie"))
+
+nkbc <- read_sas("nkbc_index.sas7bdat", encoding = "UTF-8") |> 
+  rename(id = starts_with("studie"))
+
+names(nkbc) <- tolower(names(nkbc))
+```
+
+```{r}
+# data required, rcc, nkbc, cohort (id, diadat)
+cohort <- cohort1
+source("0 DATA treatment.R")
+save(trt, file = "/Users/yuqzha/LIBRO1_BCSTO/Stockholm women/Data/Data_output/treatment.RData")
+
+# output cohort_trt: trt with diadats within 6 months and the closest 
+names(cohort_trt) # diadat.x in the cohort, diadat.y in trt data
+mean(cohort_trt$diadat.x == cohort_trt$diadat.y) # 97% are on exact same date
+
+cohort1 <- cohort1 |> 
+  left_join(cohort_trt[,c("id", "post_chemo", "post_radio", "post_endo")])
+```
+
+# Cohort2
+```{r}
+getwd()
+load("/Users/yuqzha/LIBRO1_BCSTO/Karma_Libro1/Data_output/karma.Rdata")
+load("/Users/yuqzha/LIBRO1_BCSTO/Karma_Libro1/Data_output/libro1.Rdata")
+
+```
+
+## Karma patients: pat
+replace Karma baseline mammography with closest to diagnosis (defined in mam_closest_diagnose_cases.R (output: karma_mam_closest_diagnose.Rdata))
+
+
+```{r}
+## update Karma closer to diagnosis info: mamm features, tc
+load("/Users/yuqzha/LIBRO1_BCSTO/Karma_Libro1/Data_output/karma_mam_closest_diagnose.Rdata")
+load("/Users/yuqzha/LIBRO1_BCSTO/Karma_Libro1/Data_output/Karma_tc_rcc_nkbc_other.Rdata")
+
+## choose patient with bc_diagdate
+pat <- karma |> 
+  filter(!is.na(bc_diagdate)) # & bc_invasive==1)   ## bc_diagdate is the most up-to-date until 2023.10.27, the date based on nkbc and medrec
+
+## add mam closest to diagnosis
+pat <- pat |>
+  select(!pd_mlo:masses_bi) |>  # remove mammogram info from baseline
+  left_join(karma_mam_closest_diagnose, by = "id") 
+
+## add tc
+pat <- pat |> 
+  left_join(karma_tc_rcc_nkbc_other, by = c("id", "bc_diagdate")) 
+```
+
+## Unify variable names (mainly mammographic features different between karma and libro1)
+
+Karma only
+"pd_mlo"  "mammography_date"    "days_mam_diag"            
+"masses"  "calcs"  "cad_date"   "days_cad_diag"                       
+
+Libro1 only
+[273] "pd_mult_sources"                 "pd_mult_sources_date"  
+"postmenopausal"                  "postmenopausal_before_bc" 
+
+```{r}
+pat <- pat |> 
+ mutate(pd = pd_mlo, 
+        pd_date = mammography_date, 
+        interval = diff_days,
+        cohort = "karma",
+        postmenopausal_before_bc = ifelse(is.na(menopause_status), NA,
+                                          ifelse(menopause_status == 3, 1, 0)))
+
+libro1 <- libro1 |> 
+ mutate(pd = pd_mult_sources, 
+        pd_date = pd_mult_sources_date, 
+        cohort = "libro1",
+        masses = NA_real_,
+        calcs = NA_real_,
+        cad_date = NA_Date_) 
+
+libro1 <- libro1 |> 
+  filter(is.na(participant_alsoin_karma)) ## remove duplicates
+```
+
+## Choose covariates
+```{r}
+# updated June 18, 2025
+covar <- intersect(names(pat), names(libro1)) ## common vars
+```
+
+## Combine cases
+```{r}
+cohort2 <- pat[, covar] |> 
+   rbind(libro1[, covar])
+
+cohort2 <- cohort2 |> 
+  mutate(diadat = bc_diagdate)
+```
+
+## common data
+### updated calcs and masses in calcs_masses_2506.R
+```{r}
+oldcols <- c("cad_date", "calcs", "masses", "mammography_date", "calcs_l_nbr", "calcs_r_nbr", "masses_l_nbr", "masses_r_nbr") # mammography_date is not date for pd, which is pd_date
+
+cohort2 <- cohort2 |> 
+  select(!any_of(oldcols)) # any_of only matches cols that exist 
+
+
+cohort2 <- cohort2 |> 
+  left_join(mam_bf_4y[, c("studieid", "calcs","calcs_l_nbr", "calcs_r_nbr", "masses","masses_l_nbr", "masses_r_nbr")], join_by(id == studieid)) # alternatively use mam_bf_2y
+```
+
+```{r}
+cohort2 <- cohort2 |> 
+  mutate(
+    calcs_sameside = case_when(
+      side_right == 0 ~ calcs_l_nbr,
+      side_right == 1 ~ calcs_r_nbr),
+    calcs_otherside = case_when(
+      side_right == 0 ~ calcs_r_nbr,
+      side_right == 1 ~ calcs_l_nbr),
+    masses_sameside = case_when(
+      side_right == 0 ~ masses_l_nbr,
+      side_right == 1 ~ masses_r_nbr),
+    masses_otherside = case_when(
+      side_right == 0 ~ masses_r_nbr,
+      side_right == 1 ~ masses_l_nbr),
+    calcs_bi = case_when(
+      calcs_sameside == 0 ~ 0, 
+      calcs_sameside >= 1 ~ 1),
+    calcs_bi = factor(calcs_bi, labels = c("0", ">=1")),
+    masses_bi = case_when(
+      masses_sameside == 0 ~ 0, 
+      masses_sameside >= 1 ~ 1),
+    masses_bi = factor(masses_bi, labels = c("0", ">=1")),
+    masses_3cat = case_when(
+      masses_sameside == 0 ~ 0, 
+      masses_sameside == 1 ~ 1,
+      masses_sameside >=2 ~ 2),
+    masses_3cat = factor(masses_3cat, labels = c("0", "1", ">=2")),
+    masses_dif = masses_sameside - masses_otherside,
+    masses_dif_4cat = case_when(
+      masses_dif < 0 ~ 0, 
+      masses_dif == 0 ~ 1,
+      masses_dif == 1 ~ 2,
+      masses_dif >1 ~ 3),
+    masses_dif_4cat = factor(masses_dif_4cat, labels = c("<0", "0","1", ">=2")),
+    masses_dif_3cat = case_when(
+      masses_dif <= 0 ~ 0, 
+      masses_dif == 1 ~ 1,
+      masses_dif >1 ~ 2),
+    masses_dif_3cat = factor(masses_dif_3cat, labels = c("<=0", "1", ">=2")),
+    masses_dif_2cat = case_when(
+      masses_dif <= 0 ~ 0, 
+      masses_dif >= 1 ~ 1),
+    masses_dif_2cat = factor(masses_dif_2cat, labels = c("<=0", ">=1"))
+ )
+```
+for corresponding side use masses_l_nbr masses_r_nbr
+
+### prep var
+```{r}
+source("2.1 var prep lab.R")
+
+getwd()
+```
+
+### GRS and ptv (karma and libro combined data)
+```{r}
+library(readr)
+grs <- read_delim("~/LIBRO1_BCSTO/Karma_Libro1/Data_other/GRS_BC_Yuqi/Libro1KARMA_newGRS_Yuqi.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE)
+ 
+grs <- grs |> filter(!is.na(GRS_BC)) ## 29105 left, 46865 removed
+
+grs <- grs |> filter(QC == "Passed QC") ## 20469 left
+length(unique(grs$studiepersonid))
+
+ptv <- read_delim("~/LIBRO1_BCSTO/Karma_Libro1/Data_other/PTV_from_Juan/KARMA_Libro1_PTVs_noDUP_For_Yuqi.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE)
+
+```
+
+```{r}
+cohort2 <- cohort2 |> 
+  left_join(grs, join_by(id == studiepersonid))
+
+sum(!is.na(cohort2$GRS_BC)) ## 8331 (75%) with grs info,
+```
+
+```{r}
+cohort2 <- cohort2 |> 
+  left_join(ptv, join_by(id == studiepersonid))
+
+sum(!is.na(cohort2$protein_LOF_rare_variants_exonic))
+```
+
+## FH HBOC age (added Aug 2 2025)
+```{r}
+setwd("/Users/yuqzha/LIBRO1_BCSTO/Karma_Libro1/Data_output/swecan relative")
+load("FH_hboc_age_karma.RData")
+FH_hboc_age_karma <- FH_hboc_age
+load("FH_hboc_age_libro1.RData")
+FH_hboc_age_libro1 <- FH_hboc_age
+
+FH_hboc_age <- bind_rows(FH_hboc_age_karma, FH_hboc_age_libro1)
+FH_hboc_age <- FH_hboc_age |> 
+  group_by(id) |> 
+  slice(1) |> 
+  ungroup()
+
+cohort2 <- cohort2 |> 
+  left_join(FH_hboc_age, join_by(id == id))
+
+cohort2 <- cohort2 %>%
+  mutate(across(
+    # Select columns from FH_BC_bl_median to FH_hboc_in_bl_40
+    .cols = FH_BC_bl_median:FH_hboc_in_bl_40,
+    .fns = function(x) {
+      # 1. Group numbers larger than 1 into 1
+      x <- if_else(x > 1, 1, x, missing = x)
+      
+      # 2. Add 1 to all values
+      x <- x + 1
+      
+      # 3. Replace NA with 0 when n_p_sib >= 1, otherwise keep as NA
+      x <- if_else(!is.na(n_1sr) & n_1sr >= 1, 
+                  if_else(is.na(x), 0, x),
+                  NA)
+      x <- factor(x)
+      return(x)
+    }
+  ))
+```
+
+## treatments added on Aug 9
+```{r}
+setwd("/Users/yuqzha/LIBRO1_BCSTO/Karma_Libro1/Data_raw/Libro1")
+rcc1 <- read_sas("reg_rcc_sthlm_breastcan_prework.sas7bdat", .name_repair = tolower) |> 
+  rename(id = starts_with("studie"))
+
+nkbc1 <- read_sas("2025-02-20/reg_nkbc_prework.sas7bdat", .name_repair = tolower) |> 
+  rename(id = starts_with("studie"))
+
+setwd("/Users/yuqzha/LIBRO1_BCSTO/Karma_Libro1/Data_raw/Karma")
+rcc2 <- read_sas("reg_rcc_sthlm_breastcan_prework.sas7bdat", .name_repair = tolower) |> 
+  rename(id = starts_with("studie"))
+nkbc2 <- read_sas("2025-02-20/reg_nkbc_prework.sas7bdat", .name_repair = tolower) |> 
+  rename(id = starts_with("studie"))
+medrec <- read_sas("2025-02-20/medical_records_prework.sas7bdat", .name_repair = tolower)
+
+rcc <- bind_rows(rcc1, rcc2)
+nkbc <- bind_rows(nkbc1,nkbc2)
+
+# data required, rcc, nkbc, cohort (id, diadat)
+cohort <- cohort2
+source("0 DATA treatment.R")
+save(trt, file = "/Users/yuqzha/LIBRO1_BCSTO/Karma_Libro1/Data_output/treatment.RData")
+# output cohort_trt: trt with diadats within 6 months and the closest 
+names(cohort_trt) # diadat.x in the cohort, diadat.y in trt data
+mean(cohort_trt$diadat.x == cohort_trt$diadat.y) # 95.6% are on exact same date
+
+cohort2 <- cohort2 |> 
+  left_join(cohort_trt[,c("id", "post_chemo", "post_radio", "post_endo")])
+```
+
+```{r}
+save(cohort1, cohort1_ic, pat, libro1, cohort2, file = "data/cohorts.RData")
+```
+
+```{r}
+load("data/cohorts.RData")
+```
+

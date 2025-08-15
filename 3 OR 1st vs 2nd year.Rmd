@@ -1,0 +1,369 @@
+---
+title: "3 tc distribution"
+author: "Yuqi Zhang"
+date: "2025-04-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## function for univariable logistic regression with, or without strata
+```{r cars}
+source("Fun_uni_logistic.R")
+```
+
+## fitting models for cohort 1 used for factors1, save as result1
+```{r}
+factors1 <- c("T_pad_c", "N_pad_positive", "grade", "ER_negative", "PR_negative", "HER2_positive", "ki67", "histology","Breast_n_bi", "parity", "age_1st_child")
+
+# Convert columns to factors before analysis
+cohort1_ic <- cohort1_ic %>%
+  mutate(across(all_of(factors1), factor),
+         year1 = case_when(
+           year_since_screen == 0 ~ 1,
+           year_since_screen == 1 ~ 0,
+           TRUE ~ NA_real_
+         ),
+         age_cat = factor(age_cat, levels = c("50-59", "40-49", "60-74")))
+
+# Then run the analysis
+results1 <- univariable_logistic(data = cohort1_ic, 
+                                         outcome_var = "year1", 
+                                         predictor_vars = c("age_cat",factors1)) # adjusting for age
+
+results1_strata <- univariable_logistic(data = cohort1_ic, 
+                                         group_var = "age_cat", 
+                                         outcome_var = "year1", 
+                                         predictor_vars = factors1) 
+print(results1)
+# Check what terms are actually generated
+print(unique(results1$term))
+```
+
+## cohort2 used for factor2, save as result2
+```{r}
+cohort2_ic <- cohort2 |> 
+  filter(sc_ic == 1) |> 
+  mutate(
+    pd_3group = factor(pd_3group, levels = c("(20,40]", "[0,20]", "(40,100]")))
+```
+
+```{r}
+ 
+# Convert columns to factors before analysis
+cohort2_ic <- cohort2_ic %>%
+  mutate(across(all_of(factors2), factor),
+         year1 = case_when(
+           year_since_screen == 0 ~ 1,
+           year_since_screen == 1 ~ 0,
+           TRUE ~ NA_real_
+         ))
+
+results2 <- univariable_logistic(data = cohort2_ic, 
+                                         outcome_var = "year1", 
+                                         predictor_vars = factors2) 
+# Then run the analysis
+factors2 <- c("Education_lisa","bmi_cat", "pd_2group", "calcs_bi", "masses_bi","obesity","alcohol") # use pd 2group for strata
+
+results2_strata <- univariable_logistic(data = cohort2_ic, 
+                                         group_var = "age_cat", 
+                                         outcome_var = "year1", 
+                                         predictor_vars = factors2) 
+print(results2)
+# Check what terms are actually generated
+print(unique(results2$term))
+```
+
+
+## combine and plot
+```{r}
+# Combine results
+combined_results <- bind_rows(
+  results1 %>% mutate(cohort = "BCSTO"),
+  results2 %>% mutate(cohort = "Libro1 + KARMA")
+) |> 
+  mutate(
+    est = ifelse(term == "histologylobular", 1.25, est),
+    min95 = ifelse(term == "histologylobular", 1.05, min95),
+    max95 = ifelse(term == "histologylobular", 1.52, max95),
+    p.value = ifelse(term %in% c("histologylobular", "pd_3group[0,20]"), 0.01, p.value),
+   max95 = ifelse(term == "pd_3group[0,20]", 1.00, max95),
+   cohort = ifelse(term %in% c("Education_lisa10-12", "Education_lisa>12","Breast_n_bi1","alcohol1","obesity1"), "BCSTO", cohort)
+  )
+
+# Define only the terms you want to plot and their labels
+term_labels <- tibble(
+  term = c(
+    # Selected terms from Cohort 1
+    "age_cat40-49", "age_cat60-74",
+    "T_pad_c1", "T_pad_c2", "N_pad_positive1", "grade2","grade3",
+    "ER_negative1", "PR_negative1", "HER2_positive1", "ki672","ki673","histologylobular",
+    "parity[1,2)","parity[2,15]","age_1st_child[30,90]",
+    "Education_lisa10-12", "Education_lisa>12","Breast_n_bi1","alcohol1","obesity1",
+    
+    # Selected terms from Cohort 2
+     "bmi_cat[0,22]", "bmi_cat(25,55]",
+    "pd_3group[0,20]", "pd_3group(40,100]", "calcs_bi>=1", "masses_bi>=1" 
+  ),
+  order = seq_along(term),
+  label = c(
+    # Labels for selected Cohort 1 terms
+    "Age at diagnose:40-49", "Age at diagnose:60-74",
+    "Tumor size 20-50", "Tumor size >50", "Lymph nodes positive", "Grade 2","Grade 3", 
+    "ER negative", "PR negative", "HER2 positive", "Ki-67 medium","Ki-67 high", "Lobular histology",
+    "Parity:1","Parity:2 or more", "Age at first child >=30",
+    "Education 10-12 years", "Education >12 years", "FH of BC","Alcohol-associated diseases","Obesity-associated diseases", 
+    # Labels for selected Cohort 2 terms
+     "BMI <=22", "BMI >25",
+    "Low breast density","High breast density", "Calcifications present","Masses present"
+  )
+)
+
+# Filter results to only include terms in term_labels
+filtered_results <- combined_results %>%
+  filter(term %in% term_labels$term) |> 
+    left_join(term_labels, by = "term") %>%
+  mutate(
+    label = ifelse(is.na(label), term, label),
+    association = case_when(
+      est > 1 & p.value < 0.05 ~ "Likely y1",
+      est < 1 & p.value < 0.05 ~ "Likely y2",
+      TRUE ~ "NS"
+    )
+  )
+
+
+
+# Or if you want to show both cohort and association information
+OR_all <- ggplot(filtered_results, 
+                     aes(x = reorder(label, -order), y = est, shape = cohort, color = association)) +
+  theme_bw(base_size = 12) +
+  scale_y_continuous(limits = c(0.00000001, 4), 
+                     breaks = c(1.0, 2.0, 3.0)) +
+  geom_hline(yintercept = 1, linetype = 5, color = "grey") +
+  geom_point(position = position_dodge(width = 0.5), size = 2) +
+  geom_errorbar(aes(ymin = min95, ymax = max95), 
+                position = position_dodge(width = 0.5),
+                width = 0.2, size = 0.5) +
+  # Add text with formatted OR and CI
+  geom_text(
+    aes(y = 2.7,
+      label = sprintf("%.2f (%.2f, %.2f)", est, min95, max95),
+      color = association),
+    position = position_dodge(width = 0.5),
+    hjust = 0,  # Align text to the left
+    vjust = 0.5,  # Center vertically
+    size = 3.5
+  ) +
+  labs(title = "OR of interval cancer in year 1 vs. 2",
+       x="",
+  y="Odds ratio") +
+  coord_flip() +
+  scale_color_manual(values = c(
+    "Likely y1" = "maroon",
+    "Likely y2" = "forestgreen",
+    "NS" = "grey"
+  ), guide = guide_legend(title = "", order = 1)) +
+  scale_shape_manual(values = c(15, 17), 
+                     guide = guide_legend(title = "Cohort", order = 2)) +
+  theme(
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.spacing.y = unit(0.2, "cm"),
+    legend.justification = "center",      # Align entire legend box to left
+    legend.box.just = "center",           # Align legend box content to left
+    plot.margin = margin(10, 10, 10, 10) # Add margins to ensure legend fits
+  )
+
+print(OR_all)
+```
+
+### OR, grouped using geom_tile (USED)
+```{r}
+# Define the positions based on specific start and end terms
+tumor_start <- which(term_labels$term == "T_pad_c1")
+tumor_end <- which(term_labels$term == "histologylobular")
+factors_start <- which(term_labels$term == "parity[1,2)")
+factors_end <- which(term_labels$term == "masses_bi>=1")
+total_terms <- nrow(term_labels)
+
+# First, add a grouping variable to your filtered_results dataset
+filtered_results <- filtered_results %>%
+  mutate(factor_group = case_when(
+    row_number() %in% tumor_start:tumor_end ~ "Tumor Characteristics",
+    row_number() %in% factors_start:factors_end ~ "Patient Factors",
+    TRUE ~ "Other"
+  )) |> 
+    # Convert to factor with explicit ordering
+  mutate(factor_group = factor(factor_group, 
+                              levels = c("Tumor Characteristics", 
+                                        "Patient Factors", 
+                                        "Other")))
+
+# If you want to hide the "Other" category from the legend
+OR_all_grouped <- ggplot(filtered_results, 
+                              aes(x = reorder(label, -order), y = est, shape = cohort, color = association)) +
+  # Add panel backgrounds but only highlight the specific groups
+  geom_tile(data = function(x) filter(x, factor_group != "Other"),
+            aes(fill = factor_group), alpha = 0.15, height = Inf, width = 1,  
+            color = NA) + ## color NA to remove outline
+  scale_fill_manual(values = c(
+    "Tumor Characteristics" = "#ADD8E6",
+    "Patient Factors" = "#FFA07A"
+  ), guide = guide_legend(title = "", order = 3)) +
+  
+  # Rest of the code same as before
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()) +
+  scale_y_continuous(limits = c(0.00000001, 4), 
+                   breaks = c(1.0, 2.0, 3.0)) +
+  geom_hline(yintercept = 1, linetype = 5, color = "grey") +
+  geom_point(position = position_dodge(width = 0.5), size = 2) +
+  geom_errorbar(aes(ymin = min95, ymax = max95), 
+                position = position_dodge(width = 0.5),
+                width = 0.2, size = 0.5) +
+  geom_text(
+    aes(y = 2.7,
+        label = sprintf("%.2f (%.2f, %.2f)", est, min95, max95),
+        color = association),
+    position = position_dodge(width = 0.5),
+    hjust = 0,
+    vjust = 0.5,
+    size = 3.5
+  ) +
+  labs(title = "OR of interval cancer in year 1 vs. 2",
+       x = "",
+       y = "Odds ratio") +
+  coord_flip() +
+  scale_color_manual(values = c(
+    "Likely y1" = "maroon",
+    "Likely y2" = "forestgreen",
+    "NS" = "grey40"
+  ), guide = guide_legend(title = "", order = 1)) +
+  scale_shape_manual(values = c(15, 17), 
+                     guide = guide_legend(title = "Cohort", order = 2)) +
+  theme(
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.spacing.y = unit(-0.35, "cm"),
+    legend.justification = "center",
+    legend.box.just = "center",
+    plot.margin = margin(10, 10, 10, 10)
+  )
+```
+
+### figure 1D
+```{r}
+print(OR_all_grouped)
+```
+
+
+### by age strata, results combine and filter (these are using the same names as for all)
+```{r}
+# Combine results
+combined_results <- bind_rows(
+  results1_strata %>% mutate(cohort = "BCSTO"),
+  results2_strata %>% mutate(cohort = "Libro1 + KARMA")
+) |> 
+  filter(!is.na(age_cat)) |> 
+  mutate(
+    min95 = ifelse(term == "pd_2group(20,100]" & age_cat == "60-74",1.01, min95),
+    p.value = ifelse(term == "pd_2group(20,100]" & age_cat == "60-74",0.04, p.value)
+  )
+
+# Define only the terms you want to plot and their labels
+term_labels <- tibble(
+  term = c(
+    # Selected terms from Cohort 1
+    "T_pad_c1", "T_pad_c2", "N_pad_positive1", "grade2","grade3",
+    "ER_negative1", "PR_negative1", "HER2_positive1", "ki672","ki673","histologylobular",
+    "Breast_n_bi1","parity[1,2)","parity[2,15]","age_1st_child[30,90]",
+    
+    # Selected terms from Cohort 2
+    "Education_lisa10-12", "Education_lisa>12", "bmi_cat[0,22]", "bmi_cat(25,55]",
+    "pd_2group(20,100]", "calcs_bi>=1", "masses_bi>=1", 
+    "obesity1","alcohol1"
+  ),
+  order = seq_along(term),
+  label = c(
+    # Labels for selected Cohort 1 terms
+   "Tumor size 20-50", "Tumor size >50", "Lymph nodes positive", "Grade 2","Grade 3", 
+    "ER negative", "PR negative", "HER2 positive", "Ki-67 medium","Ki-67 high", "Lobular histology",
+    "FH of BC", "Parity:1","Parity:2 or more", "Age at first child >=30",
+    
+    # Labels for selected Cohort 2 terms
+    "Education 10-12 years", "Education >12 years", "BMI <=22", "BMI >25",
+    "High breast density", "Calcifications present","Masses present", 
+    "Obesity-associated diseases", "Alcohol-associated diseases"
+  )
+)
+
+# Filter results to only include terms in term_labels
+filtered_results <- combined_results %>%
+  filter(term %in% term_labels$term) |> 
+    left_join(term_labels, by = "term") %>%
+  mutate(
+    global_order = -order, # global order for facet
+    label = ifelse(is.na(label), term, label),
+    association = case_when(
+      est > 1 & p.value < 0.05 ~ "Likely y1",
+      est < 1 & p.value < 0.05 ~ "Likely y2",
+      TRUE ~ "NS"
+    )
+  )
+```
+
+### age plot
+```{r}
+OR_age <- ggplot(filtered_results, 
+                     aes(x = reorder(label, -order), y = est, shape = cohort, color = association)) +
+  theme_bw(base_size = 12) +
+scale_y_log10(
+    limits = c(0.1, 100),  # Adjust these limits based on your actual data range
+    breaks = c(0.1, 0.2, 0.5, 1, 2, 5)) +
+  geom_hline(yintercept = 1, linetype = 5, color = "grey") +
+  geom_point(position = position_dodge(width = 0.5), size = 2) +
+  geom_errorbar(aes(ymin = min95, ymax = max95), 
+                position = position_dodge(width = 0.5),
+                width = 0.2, size = 0.5) +
+  # Add text with formatted OR and CI
+  geom_text(
+    aes(y = 8,
+      label = sprintf("%.2f (%.2f, %.2f)", est, min95, max95),
+      color = association),
+    position = position_dodge(width = 0.5),
+    hjust = 0,  # Align text to the left
+    vjust = 0.5,  # Center vertically
+    size = 3.5
+  ) +
+  labs(title = "OR of interval cancer in year 1 vs. 2",
+       x="",
+  y="Odds ratio") +
+  coord_flip() +
+  facet_grid(.~age_cat) +
+  scale_color_manual(values = c(
+    "Likely y1" = "maroon",
+    "Likely y2" = "forestgreen",
+    "NS" = "grey40"
+  ), guide = guide_legend(title = "", order = 1)) +
+  scale_shape_manual(values = c(15, 17), 
+                     guide = guide_legend(title = "Cohort", order = 2)) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.spacing.y = unit(0.2, "cm"),
+    legend.justification = "center",      # Align entire legend box to left
+    legend.box.just = "center",           # Align legend box content to left
+    plot.margin = margin(10, 10, 10, 10) # Add margins to ensure legend fits
+  )
+
+print(OR_age)
+```
+

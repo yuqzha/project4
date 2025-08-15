@@ -1,0 +1,274 @@
+---
+title: "3 OR age density timing"
+author: "Yuqi Zhang"
+date: "2025-07-07"
+output: html_document
+---
+
+```{r}
+tc <- c("T_pad_c", "N_pad_positive", "grade", "ER_negative", "PR_negative", "HER2_positive", "ki67", "histology")
+
+```
+
+## by age
+```{r}
+cohort <- cohort1 %>%
+  mutate(detection_mode = detection_mode_1) |> 
+  filter(detection_mode %in% c(1,2)) |> 
+  mutate(across(all_of(tc), factor)) |> 
+  filter(M_stage != 1) |> 
+  mutate(age_young = case_when(
+    age_at_diagnosis <= 49 ~ 1,
+    age_at_diagnosis >=60 ~ 0,
+    TRUE ~ NA_real_),
+    sc_ic = case_when(
+     detection_mode == 1 ~ 0,
+     detection_mode == 2 ~ 1,
+     TRUE ~ NA_real_)
+    )
+
+# Then run the analysis
+results <- univariable_logistic(data = cohort, 
+                                         group_var = "detection_mode", #"sc_ic", 
+                                         outcome_var =  "age_young", 
+                                         predictor_vars = tc) 
+print(results)
+```
+
+## filter results in terms
+```{r}
+source("OR_tc_filter_results.R")
+```
+
+## plot
+```{r}
+OR_age <- ggplot(filtered_results, 
+                     aes(x = reorder(label, -order), y = est, color = association)) +
+  theme_bw(base_size = 12) +
+scale_y_log10(
+    limits = c(0.35, 40),  # Adjust these limits based on your actual data range
+    breaks = c(0.1, 0.2, 0.5, 1, 2, 5)) +
+  geom_hline(yintercept = 1, linetype = 5, color = "grey") +
+  geom_point(position = position_dodge(width = 0.5), shape = 17, size = 2) +
+  geom_errorbar(aes(ymin = min95, ymax = max95), 
+                position = position_dodge(width = 0.5),
+                width = 0.2, size = 0.5) +
+  # Add text with formatted OR and CI
+  geom_text(
+    aes(y = 5,
+      label = sprintf("%.2f (%.2f, %.2f)", est, min95, max95),
+      color = association),
+    position = position_dodge(width = 0.5),
+    hjust = 0,  # Align text to the left
+    vjust = 0.5,  # Center vertically
+    size = 3.5
+  ) +
+  labs(title = "",
+       x="",
+  y="Odds ratio") +
+  coord_flip() +
+  facet_grid(.~detection_mode,labeller = labeller(detection_mode = c("1" = "ScrCa","2"= "IntCa"))) +
+  scale_color_manual(values = c(
+    "Positive" = "maroon",
+    "Negative" = "forestgreen",
+    "NS" = "grey40"
+  ), guide = guide_legend(title = "", order = 1)) +
+    theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.spacing.y = unit(0.2, "cm"),
+    legend.justification = "center",      # Align entire legend box to left
+    legend.box.just = "center",           # Align legend box content to left
+    plot.margin = margin(10, 10, 10, 10) # Add margins to ensure legend fits
+  )
+
+print(OR_age)
+```
+# comparing IntCa to ScrCa
+```{r}
+# Then run the analysis
+results <- univariable_logistic(data = cohort, 
+                                         group_var = "age_cat",
+                                         outcome_var =  "sc_ic" , 
+                                         predictor_vars = tc) 
+print(results)
+```
+## filter results in terms
+```{r}
+source("OR_tc_filter_results.R")
+
+filtered_results <- filtered_results |> filter(!is.na(age_cat))
+```
+
+## plot
+```{r}
+OR_age <- ggplot(filtered_results, 
+                     aes(x = reorder(label, -order), y = est, color = association)) +
+  theme_bw(base_size = 12) +
+scale_y_log10(
+    limits = c(0.5, 40),  # Adjust these limits based on your actual data range
+    breaks = c(0.1, 0.2, 0.5, 1, 2, 5)) +
+  geom_hline(yintercept = 1, linetype = 5, color = "grey") +
+  geom_point(position = position_dodge(width = 0.5), shape = 17, size = 2) +
+  geom_errorbar(aes(ymin = min95, ymax = max95), 
+                position = position_dodge(width = 0.5),
+                width = 0.2, size = 0.5) +
+  # Add text with formatted OR and CI
+  geom_text(
+    aes(y = 5,
+      label = sprintf("%.2f (%.2f, %.2f)", est, min95, max95),
+      color = association),
+    position = position_dodge(width = 0.5),
+    hjust = 0,  # Align text to the left
+    vjust = 0.5,  # Center vertically
+    size = 3
+  ) +
+  labs(title = "",
+       x="",
+  y="Odds ratio") +
+  coord_flip() +
+  facet_grid(.~age_cat) +
+  scale_color_manual(values = c(
+    "Positive" = "maroon",
+    "Negative" = "forestgreen",
+    "NS" = "grey40"
+  ), guide = guide_legend(title = "", order = 1)) +
+    theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.spacing.y = unit(0.2, "cm"),
+    legend.justification = "center",      # Align entire legend box to left
+    legend.box.just = "center",           # Align legend box content to left
+    plot.margin = margin(10, 10, 10, 10) # Add margins to ensure legend fits
+  )
+
+print(OR_age)
+```
+## year
+```{r}
+# Then run the analysis
+cohort_ic <- cohort |> filter(detection_mode == 2)
+
+results <- univariable_logistic(data = cohort_ic, 
+                                         group_var = "detection_mode", #"sc_ic", 
+                                         outcome_var =  "year1", 
+                                         predictor_vars = tc) 
+print(results)
+```
+
+## filter results in terms
+```{r}
+source("OR_tc_filter_results.R")
+```
+
+## plot
+```{r}
+OR_year <- ggplot(filtered_results, 
+                     aes(x = reorder(label, -order), y = est, color = association)) +
+  theme_bw(base_size = 12) +
+scale_y_log10(
+    limits = c(0.35, 40),  # Adjust these limits based on your actual data range
+    breaks = c(0.1, 0.2, 0.5, 1, 2, 5)) +
+  geom_hline(yintercept = 1, linetype = 5, color = "grey") +
+  geom_point(position = position_dodge(width = 0.5), shape = 17, size = 2) +
+  geom_errorbar(aes(ymin = min95, ymax = max95), 
+                position = position_dodge(width = 0.5),
+                width = 0.2, size = 0.5) +
+  # Add text with formatted OR and CI
+  geom_text(
+    aes(y = 5,
+      label = sprintf("%.2f (%.2f, %.2f)", est, min95, max95),
+      color = association),
+    position = position_dodge(width = 0.5),
+    hjust = 0,  # Align text to the left
+    vjust = 0.5,  # Center vertically
+    size = 3
+  ) +
+  labs(title = "",
+       x="",
+  y="Odds ratio") +
+  coord_flip() +
+  scale_color_manual(values = c(
+    "Positive" = "maroon",
+    "Negative" = "forestgreen",
+    "NS" = "grey40"
+  ), guide = guide_legend(title = "", order = 1)) +
+    theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.spacing.y = unit(0.2, "cm"),
+    legend.justification = "center",      # Align entire legend box to left
+    legend.box.just = "center",           # Align legend box content to left
+    plot.margin = margin(10, 10, 10, 10) # Add margins to ensure legend fits
+  )
+
+print(OR_year)
+```
+## OR by pd (currently in 3.2 OR by density.Rmd)
+
+## combine side by side
+```{r}
+library(patchwork)
+
+# Remove y-axis text and labels from the second and third plots
+OR_pd_no_y <- OR_pd + theme(axis.text.y = element_blank(),
+                            axis.title.y = element_blank())
+
+OR_year_no_y <- OR_year + theme(axis.text.y = element_blank(),
+                                axis.title.y = element_blank())
+
+# Combine with patchwork
+fig2 <-  (OR_age + ggtitle("IntCa vs. ScrCa by age at diagnosis")) +
+                 (OR_pd_no_y + ggtitle("IntCa vs. ScrCa by breast density (%)")) + 
+                 (OR_year_no_y + ggtitle("IntCa year 1 vs. year 2"))
+
+fig2 <- fig2 + plot_layout(widths = c(3, 2.3, 1))
+print(fig2)
+```
+## combine, top and bottom
+```{r}
+# Combine with patchwork
+combined_plot <- OR_age / 
+                 (OR_pd + OR_year_no_y + plot_layout(widths = c(2, 1)))
+
+# Add titles
+combined_plot <- (OR_age + ggtitle("A.IntCa vs. ScrCa by age at diagnosis")) / 
+                 ((OR_pd + ggtitle("B.IntCa vs. ScrCa by breast density (%)")) + 
+                  (OR_year_no_y + ggtitle("C.IntCa year 1 vs. year 2")) + 
+                  plot_layout(widths = c(2, 1)))
+
+fig2v2 <- combined_plot
+print(fig2v2)
+```
+### save fig svg
+```{r}
+dev.size("in") 
+setwd("/Users/yuqzha/LIBRO1_BCSTO/IC_timing_prognosis/fig2")
+# You might want to adjust dimensions based on your layout
+# For the 2-row layout, you might want:
+ggsave("fig2v2.svg", fig2v2, width = 12, height = 9, dpi = 300)
+ggsave("fig2v2.png", fig2v2, width = 12, height = 9, dpi = 300)
+ggsave("fig2v2.pdf", fig2v2, width = 12, height = 9, dpi = 300)
+```
+
+### save fig materials for later
+```{r}
+setwd("/Users/yuqzha/LIBRO1_BCSTO/IC_timing_prognosis/fig2")
+# Load individual components
+# Save individual plot objects as RDS files
+saveRDS(OR_age, "OR_age.rds")
+saveRDS(OR_pd, "OR_pd.rds")
+saveRDS(OR_year, "OR_year.rds")
+
+# Load individual components
+OR_age <- readRDS("OR_age.rds")
+OR_pd <- readRDS("OR_pd.rds")
+OR_year <- readRDS("OR_year.rds")
+```
+

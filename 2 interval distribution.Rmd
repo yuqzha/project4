@@ -1,0 +1,295 @@
+---
+title: "2 interval distribution"
+author: "Yuqi Zhang"
+date: "2025-04-21"
+output: html_document
+---
+
+
+Note:
+term "cohort" is used in coding throughout, so define it to the cohort to be applied to
+
+N and prop by age at diagnosis, density, and timing
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(patchwork)
+```
+
+## function to plot N and prop
+```{r}
+source("FUN_N_prop_outcome_factor.R")
+# Define color palette
+outcome_colors <- c("#FAA31B","#1642BF")
+```
+
+## N and prop by age
+```{r}
+# Create age groups for cohort1 using cut() function (age range 40-75)
+cohort1_with_age_groups <- cohort1 |>
+  mutate(
+    detection_mode_1 = factor(detection_mode_1, levels = c(2, 1),
+                                   labels = c("IntCa","ScrCa")),
+    # 5-year age groups using cut()
+    age_group_5yr = cut(age_at_diagnosis, 
+                       breaks = c(40, 45, 50, 55, 60, 65, 70, 75),
+                       labels = c("40-44", "45-49", "50-54", "55-59", "60-64", "65-69", "70-74"),
+                       right = FALSE,
+                       include.lowest = TRUE),
+    
+    # 10-year age groups using cut()
+    age_group_10yr = cut(age_at_diagnosis,
+                        breaks = c(40, 50, 60, 70, 75),
+                        labels = c("40-49", "50-59", "60-69", "70-74"),
+                        right = FALSE,
+                        include.lowest = TRUE)
+  )
+
+# Apply functions with 5-year age groups
+plot_count_5yr <- count_outcome_by_factor(cohort1_with_age_groups, 
+                                          detection_mode_1, 
+                                          age_group_5yr) +
+  labs(x = "Age at diagnosis", fill = "", title = "By age at diagnosis") +
+    theme(legend.position = c(0, 1),  # x=0.1 (left), y=0.9 (top)
+        legend.justification = c(0, 1))   # anchor at top-left of legend box
+
+plot_prop_5yr <- prop_outcome_by_factor(cohort1_with_age_groups, 
+                                        detection_mode_1, 
+                                        age_group_5yr)  +
+  labs(x = "Age at diagnosis", color = "") +
+    theme(legend.position = c(0, 1),  # x=0.1 (left), y=0.9 (top)
+        legend.justification = c(0, 1))   # anchor at top-left of legend box
+
+fig1p1 <- plot_count_5yr / plot_prop_5yr
+```
+
+
+## N and prop by density
+```{r}
+# Create density groups for cohort2
+cohort2_with_density_groups <- cohort2 |>
+  filter(detection_mode %in% c(1,2)) |> 
+  mutate(
+    # Create density groups using cut()
+    density_group = cut(pd, 
+                       breaks = c(0, 10, 20, 30, 40, 50, 60, 100),
+                       labels = c("0-9", "10-19", "20-29", "30-39", "40-49", "50-59", "60-99"),
+                       right = FALSE,
+                       include.lowest = TRUE),
+    
+    # Recode detection_mode with proper labels (assuming same coding as cohort1)
+    detection_mode_labeled = factor(detection_mode,
+                                   levels = c(2, 1),
+                                   labels = c("IntCa","ScrCa"))
+  )
+
+# Apply functions to create visualizations
+plot_count_density <- count_outcome_by_factor(cohort2_with_density_groups, 
+                                              detection_mode_labeled, 
+                                              density_group) +
+  labs(x = "Density group",fill = "", title = "By breast density") +
+  theme(legend.position = c(1, 1),  # x=0.1 (left), y=0.9 (top)
+        legend.justification = c(1, 1))   # anchor at top-left of legend box
+
+
+plot_prop_density <- prop_outcome_by_factor(cohort2_with_density_groups, 
+                                            detection_mode_labeled, 
+                                            density_group) +
+  labs(x = "Density group", color = "")+
+  theme(legend.position = c(1, 1),  # x=0.1 (left), y=0.9 (top)
+        legend.justification = c(1, 1)) 
+
+fig1p2 <- plot_count_density / plot_prop_density
+```
+
+## N by month, and age
+```{r, echo=FALSE}
+cohort <- cohort1_with_age_groups |> 
+  filter(detection_mode_1 == "IntCa") |> 
+  filter(between(as.numeric(month), 0,25))
+
+n_month <- ggplot(data = cohort,
+        aes(x = month, fill = ben)) +
+  geom_bar() +
+  labs(title = "IntCa by timing",
+           x = "Month",
+    y = "Count",
+       fill = "Type") +
+   scale_x_discrete(breaks = seq(0,24,3)) +
+  scale_fill_manual(values = c("#FAA31B", "#FFC470")) +
+    theme_minimal() +
+    theme(legend.position = "none")
+
+print(n_month)
+
+n_month_age <- ggplot(data = cohort,
+        aes(x = month, fill = ben)) +
+  geom_bar() +
+ ## scale_fill_manual(values = c("#666666","#999999")) +
+  facet_grid(.~age_cat) + ## by age
+  labs(title = "Number of IC",
+           x = "Month",
+    y = "Count") +
+   scale_x_discrete(breaks = seq(0,24,3))
+print(n_month_age)
+```
+
+### plot: % of invasive and insitu by month
+```{r}
+plot_data <- cohort |> 
+    group_by(month, ben) |> 
+    summarise(Total=n()) |> 
+    group_by(month) |> 
+    # pre-calculation of proportion by time
+    mutate(Prop=Total/sum(Total)) |> 
+    ungroup() 
+
+n_insitu <- plot_data|> 
+  ggplot(aes(x = month,y = Prop, fill = ben)) +
+ geom_col() +
+  labs(title = "Number of interval cancer") +
+  scale_x_discrete(breaks = seq(0,24,3)) + 
+  scale_fill_manual(values = c("#FAA31B", "#FFC470")) +
+  theme(legend.position = c(0,1))
+
+print(plot_data)
+```
+
+## CumN by month (used)
+```{r}
+CumN <- cohort %>%
+  arrange(age_cat, ben, month) %>%              # Ensure data is ordered by age_cat and month
+  group_by(age_cat, ben, month) %>%  # Group by age_cat (and by ben if needed)
+  mutate(monthly_count = n()) |> 
+  slice(1) |> 
+  select(month, age_cat, ben, monthly_count)
+
+## some month has 0 count, thus missing, create a record with 0 using pivot
+temp <- CumN |> 
+  pivot_wider(
+    id_cols = c(age_cat, ben),
+    names_from = month,
+    names_prefix = "month",
+    values_from = monthly_count
+  )
+temp <- temp |> 
+  filter(!is.na(age_cat)) |> 
+  mutate(across(starts_with("month"), ~ replace_na(.x, 0)))
+
+CumN <- temp |> 
+  pivot_longer(
+    cols = starts_with("month"),
+    names_to = "month"
+  ) |> 
+  mutate(month = gsub("^month", "", month),
+         month = as.numeric(month))
+
+CumN <- CumN |> 
+  group_by(age_cat, ben) |>
+  arrange(month) |> 
+  mutate(cumulative_count = cumsum(value)) %>%
+  ungroup()   
+
+CumN_plot <- ggplot(CumN, aes(x = month, y = cumulative_count, fill = ben)) +
+  geom_col() +
+  labs(
+    title = "",
+    x = "Month",
+    y = "Cumulative count",
+    fill = "Type"
+  ) +
+  scale_x_continuous(breaks = seq(0,24,3)) +
+  scale_fill_manual(values = c("#FAA31B", "#FFC470")) +
+  theme_minimal() +
+      theme(legend.position = c(0, 1),  # x=0.1 (left), y=0.9 (top)
+        legend.justification = c(0, 1))
+
+
+print(CumN_plot)
+```
+
+## CumN, by strata of age
+```{r}
+CumN_age <- ggplot(CumN, aes(x = month, y = cumulative_count, fill = ben)) +
+  geom_col() +
+  labs(
+    title = "Cumulative number by age group",
+    x = "Month",
+    y = "Cumulative count",
+    fill = "Type"
+  ) +
+  scale_x_continuous(breaks = seq(0,24,3),limits = c(0,24)) +
+  scale_fill_manual(values = c("#FAA31B", "#FFC470")) +
+  theme_minimal() +
+  facet_grid(~ age_cat) 
+
+print(CumN_age)
+
+
+```
+
+### adding a ref line to indicate the month with half of cases
+```{r}
+# Calculate the month where cumulative count is closest to half the final count
+target_month <- CumN %>%
+  group_by(age_cat) %>% # If faceted by age_cat
+  summarise(
+    half_count = max(cumulative_count) / 2,
+    ref_month = month[which.min(abs(cumulative_count - half_count))]
+  )
+
+CumN_age_refline <- ggplot(CumN, aes(x = month, y = cumulative_count, fill = ben)) +
+  geom_col() +
+  labs(
+    title = "Cumulative number by age group",
+    x = "Month",
+    y = "Cumulative count",
+    fill = "Type"
+  ) +
+  scale_x_continuous(breaks = seq(0, 24, 3),limits = c(0,24)) +
+  scale_fill_manual(values = c("#FAA31B", "#FFC470")) +
+  theme_minimal() +
+  facet_grid(age_cat ~ .) +
+  geom_vline(
+    data = target_month,
+    aes(xintercept = ref_month),
+    color = "red",
+    linetype = "dashed",
+    size = 0.8
+  ) +
+  theme(legend.position = "none")
+
+print(CumN_age_refline)
+```
+## fig1 part 3 N, cumN, and by age over month/timing
+```{r}
+library(patchwork)
+
+# Combine plots vertically with height ratios 1:1:2
+fig1p3 <- n_month / CumN_plot / CumN_age_refline + 
+  plot_layout(heights = c(1, 1, 2))
+
+# Display the combined plot
+fig1p3
+```
+```{r}
+fig1 <- (plot_count_5yr / plot_prop_5yr) | 
+                (plot_count_density / plot_prop_density) | 
+                (n_month / CumN_plot / CumN_age_refline + 
+                 plot_layout(heights = c(1, 1, 2))) +
+                plot_layout(widths = c(1, 1, 1)) &
+                theme(plot.margin = margin(5, 15, 5, 5))  # top, right, bottom, left
+
+print(fig1)
+```
+## save plots 
+```{r}
+# Save individual component plots
+save(plot_count_5yr, plot_prop_5yr, plot_count_density, plot_prop_density,
+     n_month, CumN_plot, CumN_age_refline, fig1,
+     file = "my_plots.RData")
+
+# Or save as individual .rds files
+saveRDS(fig1, "fig1.rds")
+```
+
