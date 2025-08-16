@@ -3,6 +3,7 @@ title: "1.1 Table1"
 author: "Yuqi Zhang"
 date: "2025-08-15"
 output:
+  word_document: default
   html_document:
     keep_md: true
 ---
@@ -17,6 +18,7 @@ library(knitr)
 library(kableExtra)
 ```
 
+# define var list
 ```{r setup, include=FALSE}
 source("FUN_desc_table.R")
 
@@ -25,28 +27,59 @@ tc <- c("T_pad_c", "N_pad_positive", "grade", "ER_negative", "PR_negative", "HER
 trt <- c("post_chemo", "post_radio", "post_endo") 
 
 factor2_cont <- c("Alcohol_day", "smoking_packyears")
-factors2 <- c("pd_3group","pd_BIRADs","bmi_cat", "risk_breastcancer_own_10yr","GRS_BC", "protein_LOF_rare_variants_exonic", "pinkcat","BOADICEA")
+factors2 <- c("pd_BIRADs","pd_3group","bmi_cat", "risk_breastcancer_own_10yr","GRS_BC", "protein_LOF_rare_variants_exonic", "pinkcat","BOADICEA")
 ```
+
+## Create variable label mapping
+```{r}
+variable_labels <- c(
+  # Cohort 1 variables (factors1)
+  "year1" = "Year of diagnosis",
+  "period" = "Diagnosis period", 
+  "parity" = "Parity",
+  "age_1st_child" = "Age at first child",
+  "Education_2cat" = "Education level",
+  "FH_BC_bl_50" = "Family history of breast cancer (≤50 years)",
+  
+  # Cohort 2 continuous variables
+  "Alcohol_day" = "Alcohol consumption (g/day)",
+  "smoking_packyears" = "Smoking (pack-years)",
+  
+  # Cohort 2 factor variables (factors2)
+  "pd_3group" = "Breast density (3 groups)",
+  "pd_BIRADs" = "Breast density (BI-RADS)",
+  "bmi_cat" = "BMI", 
+  "risk_breastcancer_own_10yr" = "10-year breast cancer risk",
+  "GRS_BC" = "Genetic risk score for breast cancer",
+  "protein_LOF_rare_variants_exonic" = "Protein-truncating variants",
+  "pinkcat" = "PINK PTV",
+  "BOADICEA" = "BOADICEA PTV"
+)
+```
+
 ```{r}
 create_descriptive_table(
   data = cohort1,
   group_var = "detection_mode",
   continuous_vars = c(),
-  factor_vars = c(factors1, tc, trt),
-  use_median = TRUE,  # Use median/IQR instead of mean/SD
-  digits = 2,         # Number of decimal places
-  exact_tests = FALSE # Use exact tests when appropriate
+  factor_vars = factors1,
+  use_median = TRUE,
+  digits = 2,
+  exact_tests = FALSE,
+  variable_labels = variable_labels  # Add this parameter
 )
 ```
+
 ```{r}
 create_descriptive_table(
   data = cohort2,
   group_var = "detection_mode",
-  continuous_vars = c(factor2_cont),
-  factor_vars = c(factors2),
-  use_median = TRUE,  # Use median/IQR instead of mean/SD
-  digits = 2,         # Number of decimal places
-  exact_tests = FALSE # Use exact tests when appropriate
+  continuous_vars = factor2_cont,
+  factor_vars = factors2,
+  use_median = TRUE,
+  digits = 2,
+  exact_tests = FALSE,
+  variable_labels = variable_labels  # Add this parameter
 )
 ```
 

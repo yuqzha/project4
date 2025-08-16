@@ -1,16 +1,6 @@
-# Example usage:
-# create_descriptive_table(
-#   data = pop_baseline,
-#   group_var = "included_2visits",
-#   continuous_vars = c("Age", "HbA1c_result", "diabetes_duration"),
-#   factor_vars = c("sex", "Indigenous", "RA3"),
-#   use_median = TRUE,  # Use median/IQR instead of mean/SD
-#   digits = 2,         # Number of decimal places
-#   exact_tests = FALSE # Use exact tests when appropriate
-# )
-
 create_descriptive_table <- function(data, group_var, continuous_vars = NULL, factor_vars = NULL, 
-                                     use_median = TRUE, digits = 2, exact_tests = FALSE) {
+                                     use_median = TRUE, digits = 2, exact_tests = FALSE,
+                                     variable_labels = NULL) {
   
   # Load required packages
   required_packages <- c("dplyr", "tidyr", "knitr", "kableExtra")
@@ -218,6 +208,16 @@ create_descriptive_table <- function(data, group_var, continuous_vars = NULL, fa
   descriptive_table <- dplyr::bind_rows(results_list) %>%
     dplyr::select(Variable, Statistic, Factor_Level, dplyr::everything())
   
+  # Apply variable labels if provided
+  if (!is.null(variable_labels)) {
+    descriptive_table <- descriptive_table %>%
+      dplyr::mutate(
+        Variable = ifelse(Variable %in% names(variable_labels), 
+                          variable_labels[Variable], 
+                          Variable)
+      )
+  }
+  
   # Create header
   header <- c("Variable", "Statistic", "Factor Level", group_labels)
   
@@ -247,4 +247,36 @@ create_descriptive_table <- function(data, group_var, continuous_vars = NULL, fa
     )
   }
 }
+
+# Example usage with variable labels:
+# 
+# # Create variable label mapping
+# variable_labels <- c(
+#   "period" = "Diagnosis period",
+#   "parity" = "Parity", 
+#   "age_1st_child" = "Age at first child",
+#   "Education_2cat" = "Education level",
+#   "FH_BC_bl_50" = "Family history of breast cancer",
+#   "Alcohol_day" = "Alcohol consumption (g/day)",
+#   "smoking_packyears" = "Smoking (pack-years)",
+#   "pd_3group" = "Parenchymal density",
+#   "pd_BIRADs" = "BI-RADS density",
+#   "bmi_cat" = "BMI category",
+#   "risk_breastcancer_own_10yr" = "10-year breast cancer risk",
+#   "GRS_BC" = "Genetic risk score",
+#   "protein_LOF_rare_variants_exonic" = "Protein-truncating variants",
+#   "pinkcat" = "PINK1 category",
+#   "BOADICEA" = "BOADICEA risk score"
+# )
+#
+# create_descriptive_table(
+#   data = pop_baseline,
+#   group_var = "included_2visits",
+#   continuous_vars = c("Age", "HbA1c_result", "diabetes_duration"),
+#   factor_vars = c("sex", "Indigenous", "RA3"),
+#   use_median = TRUE,
+#   digits = 2,
+#   exact_tests = FALSE,
+#   variable_labels = variable_labels
+# )
 
