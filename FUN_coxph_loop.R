@@ -71,7 +71,8 @@ coxph_loop <- function(data, outcome_var, time_var, predictor_vars,
                 conf.int = TRUE, exponentiate = TRUE)) %>%
         mutate(
           predictor_var = predictor,  # Add predictor variable name
-          est_ci = sprintf("%.2f (%.2f, %.2f)", estimate, conf.low, conf.high)
+          est = sprintf("%.2f (%.2f, %.2f)", estimate, conf.low, conf.high),
+          p = round(p.value,3)
         ) %>%
         # Only keep the main predictor term (not covariates)
         filter(term != "(Intercept)" & startsWith(term, predictor))
@@ -89,8 +90,8 @@ coxph_loop <- function(data, outcome_var, time_var, predictor_vars,
         ungroup() %>%
         mutate(
           predictor_var = predictor,  # Add predictor variable name
-          est_ci = sprintf("%.2f (%.2f, %.2f)", estimate, conf.low, conf.high),
-          p.value = round(p.value,3)
+          est = sprintf("%.2f (%.2f, %.2f)", estimate, conf.low, conf.high),
+          p = round(p.value,3)
         ) %>%
         # Only keep the main predictor term (not covariates)
         filter(term != "(Intercept)" & startsWith(term, predictor))
@@ -106,10 +107,10 @@ coxph_loop <- function(data, outcome_var, time_var, predictor_vars,
   # Select relevant columns based on whether group_var exists
   if (is.null(group_var)) {
     model_results <- model_results %>%
-      select(predictor_var, term, estimate, conf.low, conf.high, p.value)
+      select(predictor_var, term, estimate, conf.low, conf.high, p)
   } else {
     model_results <- model_results %>%
-      select(predictor_var, term, estimate, conf.low, conf.high,est_ci, p.value, !!group_sym)
+      select(predictor_var, term, estimate, conf.low, conf.high,est, p, !!group_sym)
   }
   
   return(model_results)
