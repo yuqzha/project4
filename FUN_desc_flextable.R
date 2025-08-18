@@ -1,9 +1,9 @@
-create_descriptive_table <- function(data, group_var, variables = NULL, continuous_vars = NULL, 
-                                     use_median = TRUE, digits = 2, exact_tests = FALSE,
-                                     variable_labels = NULL) {
+create_descriptive_flextable <- function(data, group_var, variables = NULL, continuous_vars = NULL, 
+                                         use_median = TRUE, digits = 2, exact_tests = FALSE,
+                                         variable_labels = NULL) {
   
   # Load required packages
-  required_packages <- c("dplyr", "tidyr", "knitr", "kableExtra")
+  required_packages <- c("dplyr", "tidyr", "flextable")
   missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
   
   if (length(missing_packages) > 0) {
@@ -60,9 +60,6 @@ create_descriptive_table <- function(data, group_var, variables = NULL, continuo
   
   # Create column headers with counts
   group_labels <- paste0(group_summary[[group_var]], " (n=", group_summary$n, ")")
-  
-  # Initialize empty list for results
-  results_list <- list()
   
   # Process variables in the order specified in the variables list
   results_list <- list()
@@ -234,7 +231,9 @@ create_descriptive_table <- function(data, group_var, variables = NULL, continuo
   }
   
   # Combine all results in the order they were processed
-  descriptive_table <- dplyr::bind_rows(results_list) %>%
+  descriptive_table <- dplyr::bind_rows(results_list)
+  
+  descriptive_table <- descriptive_table %>%
     dplyr::select(Variable, Statistic, Factor_Level, dplyr::everything())
   
   # Apply variable labels if provided
@@ -250,29 +249,36 @@ create_descriptive_table <- function(data, group_var, variables = NULL, continuo
   # Create header
   header <- c("Variable", "Statistic", "Factor Level", group_labels)
   
-  # Return appropriate format
-  if (knitr::is_html_output()) {
-    # HTML output with styling
-    descriptive_table %>%
-      knitr::kable(
-        col.names = header, 
-        align = "c",
-        format = "html",
-        table.attr = "class='table table-striped table-hover'"
-      ) %>%
-      kableExtra::kable_styling(
-        full_width = FALSE, 
-        bootstrap_options = c("striped", "hover", "condensed"),
-        position = "center"
-      ) %>%
-      kableExtra::column_spec(1, bold = TRUE)
-  } else {
-    # Simple output for Word/PDF
-    colnames(descriptive_table) <- header
-    knitr::kable(
-      descriptive_table, 
-      format = "pipe",
-      align = "c"
-    )
-  }
+  # Ensure Variable column has identical values for rows that should be merged
+  # (flextable::merge_v only merges identical consecutive values)
+  descriptive_table <- descriptive_table %>%
+    dplyr::group_by(Variable) %>%
+    dplyr::mutate(Variable = dplyr::first(Variable)) %>%  # Make all rows in each group have the same Variable value
+    dplyr::ungroup()
+  
+  # Create flextable
+  colnames(descriptive_table) <- header
+  
+  ft <- flextable::flextable(descriptive_table)
+  
+  # Apply formatting
+  ft <- ft %>%
+    flextable::theme_vanilla() %>%
+    flextable::fontsize(size = 10, part = "all") %>%
+    flextable::align(align = "center", part = "all") %>%
+    flextable::align(j = 1, align = "left", part = "body") %>%  # Left-align variable names
+    flextable::bold(part = "header") %>%
+    flextable::border_outer(border = officer::fp_border(color = "black", width = 1)) %>%
+    flextable::border_inner_h(border = officer::fp_border(color = "gray", width = 0.5)) %>%
+    flextable::border_inner_v(border = officer::fp_border(color = "gray", width = 0.5))
+  
+  # Merge cells for variables with multiple rows (flextable automatically merges identical consecutive cells)
+  ft <- ft %>%
+    flextable::merge_v(j = 1)  # Merge Variable column where consecutive cells are identical
+  
+  # Auto-fit width
+  ft <- ft %>%
+    flextable::autofit()
+  
+  return(ft)
 }

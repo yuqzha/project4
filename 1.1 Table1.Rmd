@@ -72,11 +72,13 @@ variable_labels <- c(
 ```
 
 ```{r}
-source("FUN_desc_table.R")
+# source("FUN_desc_table.R") # does not work with merging rows, so changed to flextable
+
+source("FUN_desc_flextable.R")
 ```
 
 ```{r}
-create_descriptive_table(
+create_descriptive_flextable(
   data = cohort1,
   group_var = "detection_mode",
   variables = c(factors1, tc, trt),
@@ -89,7 +91,7 @@ create_descriptive_table(
 ```
 
 ```{r}
-create_descriptive_table(
+create_descriptive_flextable(
   data = cohort2,
   group_var = "detection_mode",
   variables = c(factors1, tc, trt, factors2),
