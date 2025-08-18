@@ -1,4 +1,4 @@
-create_descriptive_table <- function(data, group_var, continuous_vars = NULL, factor_vars = NULL, 
+create_descriptive_table <- function(data, group_var, variables = NULL, continuous_vars = NULL, 
                                      use_median = TRUE, digits = 2, exact_tests = FALSE,
                                      variable_labels = NULL) {
   
@@ -23,17 +23,28 @@ create_descriptive_table <- function(data, group_var, continuous_vars = NULL, fa
     stop(paste("Grouping variable '", group_var, "' not found in the dataset.", sep = ""))
   }
   
-  if (is.null(continuous_vars) && is.null(factor_vars)) {
-    stop("At least one of 'continuous_vars' or 'factor_vars' must be specified.")
+  if (is.null(variables)) {
+    stop("The 'variables' argument must be specified - provide the list of variables to include in the table.")
   }
   
+  # Set continuous_vars to empty if NULL
+  if (is.null(continuous_vars)) {
+    continuous_vars <- character(0)
+  }
+  
+  # Use the supplied variables list
+  all_vars <- variables
+  
+  # Automatically classify: specified continuous_vars are continuous, rest from variables list are factors
+  factor_vars <- setdiff(all_vars, continuous_vars)
+  
   # Check if specified variables exist in the dataset
-  all_vars <- c(continuous_vars, factor_vars)
   missing_vars <- all_vars[!all_vars %in% colnames(data)]
   if (length(missing_vars) > 0) {
     warning(paste("Variables not found in dataset:", paste(missing_vars, collapse = ", ")))
     continuous_vars <- continuous_vars[continuous_vars %in% colnames(data)]
     factor_vars <- factor_vars[factor_vars %in% colnames(data)]
+    all_vars <- all_vars[all_vars %in% colnames(data)]
   }
   
   # Convert group variable to factor if it isn't already
@@ -53,158 +64,176 @@ create_descriptive_table <- function(data, group_var, continuous_vars = NULL, fa
   # Initialize empty list for results
   results_list <- list()
   
-  # Process continuous variables
-  if (!is.null(continuous_vars) && length(continuous_vars) > 0) {
-    
-    continuous_summary <- continuous_vars %>%
-      lapply(function(var) {
-        
-        # Skip if variable has no numeric values
-        if (!is.numeric(data[[var]])) {
-          warning(paste("Variable '", var, "' is not numeric. Converting or skipping.", sep = ""))
-          return(NULL)
-        }
-        
-        # Calculate non-NA counts by group for continuous variables
-        non_na_counts <- data %>%
-          dplyr::select(dplyr::all_of(var), dplyr::all_of(group_var)) %>%
-          dplyr::filter(!is.na(.data[[var]])) %>%
-          dplyr::group_by(across(dplyr::all_of(group_var))) %>%
-          dplyr::summarise(non_na_count = dplyr::n(), .groups = "drop") %>%
-          tidyr::pivot_wider(names_from = dplyr::all_of(group_var), values_from = non_na_count) %>%
-          dplyr::mutate(dplyr::across(-dplyr::any_of(c("Variable", "Statistic", "Factor_Level")), as.character))
-        
-        if (use_median) {
-          # Use median and IQR
-          summary_data <- data %>%
-            dplyr::group_by(across(dplyr::all_of(group_var))) %>%
-            dplyr::summarise(
-              summary_stat = paste0(
-                round(median(.data[[var]], na.rm = TRUE), digits), " (",
-                round(quantile(.data[[var]], 0.25, na.rm = TRUE), digits), ", ",
-                round(quantile(.data[[var]], 0.75, na.rm = TRUE), digits), ")"
-              ), 
-              .groups = "drop"
-            ) %>%
-            tidyr::pivot_wider(names_from = dplyr::all_of(group_var), values_from = summary_stat)
-          
-          statistic_label <- "Median (Q1, Q3)"
-          
-        } else {
-          # Use mean and SD
-          summary_data <- data %>%
-            dplyr::group_by(across(dplyr::all_of(group_var))) %>%
-            dplyr::summarise(
-              summary_stat = paste0(
-                round(mean(.data[[var]], na.rm = TRUE), digits), " (",
-                round(sd(.data[[var]], na.rm = TRUE), digits), ")"
-              ), 
-              .groups = "drop"
-            ) %>%
-            tidyr::pivot_wider(names_from = dplyr::all_of(group_var), values_from = summary_stat)
-          
-          statistic_label <- "Mean (SD)"
-        }
-        
-        # Add metadata to summary statistics
-        summary_data <- summary_data %>%
-          dplyr::mutate(
-            Variable = var, 
-            Statistic = statistic_label, 
-            Factor_Level = NA_character_,
-            .before = 1
-          )
-        
-        # Create the non-NA count summary row for continuous variables
-        non_na_summary <- non_na_counts %>%
-          dplyr::mutate(
-            Variable = var,
-            Statistic = "Non-missing observations",
-            Factor_Level = NA_character_,
-            .before = 1
-          )
-        
-        # Combine summary statistics first, then non-NA summary row
-        combined_data <- dplyr::bind_rows(summary_data, non_na_summary)
-        
-        return(combined_data)
-      }) %>%
-      purrr::discard(is.null) %>%  # Remove NULL entries
-      dplyr::bind_rows()
-    
-    results_list[["continuous"]] <- continuous_summary
-  }
+  # Process variables in the order specified in the variables list
+  results_list <- list()
   
-  # Process factor variables
-  if (!is.null(factor_vars) && length(factor_vars) > 0) {
-    
-    factor_summary <- factor_vars %>%
-      lapply(function(var) {
-        
-        # Convert to factor if not already
-        if (!is.factor(data[[var]])) {
-          data[[var]] <- as.factor(data[[var]])
+  for (var in all_vars) {
+    if (var %in% continuous_vars) {
+      # Process as continuous variable
+      
+      # Skip if variable has no numeric values
+      if (!is.numeric(data[[var]])) {
+        warning(paste("Variable '", var, "' is not numeric. Converting or skipping.", sep = ""))
+        next
+      }
+      
+      # Enhanced handling: Check for all NA values or no data
+      if (all(is.na(data[[var]])) || length(data[[var]]) == 0) {
+        # Create an empty summary with NAs
+        empty_summary <- data.frame(Variable = var, 
+                                    Statistic = ifelse(use_median, "Median (Q1, Q3)", "Mean (SD)"), 
+                                    Factor_Level = NA_character_,
+                                    stringsAsFactors = FALSE)
+        # Add one column for each group level with "NA" values
+        for (group_level in levels(data[[group_var]])) {
+          empty_summary[[as.character(group_level)]] <- "NA"
         }
-        
-        # Create contingency table (excluding NAs for statistical tests)
-        contingency_table <- table(data[[var]], data[[group_var]], useNA = "no")
-        
-        # Calculate non-NA counts by group for the summary row
-        non_na_counts <- data %>%
-          dplyr::select(dplyr::all_of(var), dplyr::all_of(group_var)) %>%
-          dplyr::filter(!is.na(.data[[var]])) %>%
+        results_list[[var]] <- empty_summary
+        next
+      }
+      
+      # Calculate non-NA counts by group for continuous variables
+      non_na_counts <- data %>%
+        dplyr::select(dplyr::all_of(var), dplyr::all_of(group_var)) %>%
+        dplyr::filter(!is.na(.data[[var]])) %>%
+        dplyr::group_by(across(dplyr::all_of(group_var))) %>%
+        dplyr::summarise(non_na_count = dplyr::n(), .groups = "drop") %>%
+        tidyr::pivot_wider(names_from = dplyr::all_of(group_var), values_from = non_na_count) %>%
+        dplyr::mutate(dplyr::across(-dplyr::any_of(c("Variable", "Statistic", "Factor_Level")), as.character))
+      
+      if (use_median) {
+        # Enhanced median and IQR calculation with NA handling
+        summary_data <- data %>%
           dplyr::group_by(across(dplyr::all_of(group_var))) %>%
-          dplyr::summarise(non_na_count = dplyr::n(), .groups = "drop") %>%
-          tidyr::pivot_wider(names_from = dplyr::all_of(group_var), values_from = non_na_count) %>%
-          dplyr::mutate(dplyr::across(-dplyr::any_of(c("Variable", "Statistic", "Factor_Level")), as.character))
-        
-        # Calculate percentages and format (excluding NAs)
-        category_data <- data %>%
-          dplyr::select(dplyr::all_of(var), dplyr::all_of(group_var)) %>%
-          dplyr::filter(!is.na(.data[[var]])) %>%  # Remove NA values for percentage calculation
-          dplyr::group_by(across(dplyr::all_of(group_var)), .data[[var]]) %>%
-          dplyr::summarise(Count = dplyr::n(), .groups = "drop") %>%
-          dplyr::group_by(across(dplyr::all_of(group_var))) %>%
-          dplyr::mutate(Percentage = Count / sum(Count) * 100) %>%
-          dplyr::ungroup() %>%
-          dplyr::mutate(
-            summary_stat = paste0(Count, " (", round(Percentage, 1), "%)"),
-            Factor_Level = as.character(.data[[var]])
+          dplyr::summarise(
+            summary_stat = ifelse(all(is.na(.data[[var]])), "NA", 
+                                  paste0(
+                                    round(median(.data[[var]], na.rm = TRUE), digits), " (",
+                                    round(quantile(.data[[var]], 0.25, na.rm = TRUE), digits), ", ",
+                                    round(quantile(.data[[var]], 0.75, na.rm = TRUE), digits), ")"
+                                  )
+            ), 
+            .groups = "drop"
           ) %>%
-          dplyr::select(Factor_Level, dplyr::all_of(group_var), summary_stat) %>%
           tidyr::pivot_wider(names_from = dplyr::all_of(group_var), values_from = summary_stat)
         
-        # Perform appropriate test (only on non-missing data)
-        # Note: Statistical tests removed as per user request
+        statistic_label <- "Median (Q1, Q3)"
         
-        # Add metadata to category data
-        category_data <- category_data %>%
-          dplyr::mutate(
-            Variable = var, 
-            Statistic = "Count (%)", 
-            .before = 1
-          )
+      } else {
+        # Enhanced mean and SD calculation with NA handling
+        summary_data <- data %>%
+          dplyr::group_by(across(dplyr::all_of(group_var))) %>%
+          dplyr::summarise(
+            summary_stat = ifelse(all(is.na(.data[[var]])), "NA",
+                                  paste0(
+                                    round(mean(.data[[var]], na.rm = TRUE), digits), " (",
+                                    round(sd(.data[[var]], na.rm = TRUE), digits), ")"
+                                  )
+            ), 
+            .groups = "drop"
+          ) %>%
+          tidyr::pivot_wider(names_from = dplyr::all_of(group_var), values_from = summary_stat)
         
-        # Create the non-NA count summary row
-        non_na_summary <- non_na_counts %>%
-          dplyr::mutate(
-            Variable = var,
-            Statistic = "Non-missing observations",
-            Factor_Level = NA_character_,
-            .before = 1
-          )
-        
-        # Combine category data first, then non-NA summary row
-        combined_data <- dplyr::bind_rows(category_data, non_na_summary)
-        
-        return(combined_data)
-      }) %>%
-      dplyr::bind_rows()
-    
-    results_list[["factor"]] <- factor_summary
+        statistic_label <- "Mean (SD)"
+      }
+      
+      # Add metadata to summary statistics
+      summary_data <- summary_data %>%
+        dplyr::mutate(
+          Variable = var, 
+          Statistic = statistic_label, 
+          Factor_Level = NA_character_,
+          .before = 1
+        )
+      
+      # Create the non-NA count summary row for continuous variables
+      non_na_summary <- non_na_counts %>%
+        dplyr::mutate(
+          Variable = var,
+          Statistic = "Non-missing observations",
+          Factor_Level = NA_character_,
+          .before = 1
+        )
+      
+      # Combine summary statistics first, then non-NA summary row
+      combined_data <- dplyr::bind_rows(summary_data, non_na_summary)
+      results_list[[var]] <- combined_data
+      
+    } else {
+      # Process as factor variable
+      
+      # Convert to factor if not already
+      if (!is.factor(data[[var]])) {
+        data[[var]] <- as.factor(data[[var]])
+      }
+      
+      # Enhanced handling: Check for all NA values
+      if (all(is.na(data[[var]]))) {
+        # Create an empty summary with NAs
+        empty_summary <- data.frame(Variable = var, 
+                                    Statistic = "Count (%)", 
+                                    Factor_Level = NA_character_,
+                                    stringsAsFactors = FALSE)
+        # Add one column for each group level with "NA" values
+        for (group_level in levels(data[[group_var]])) {
+          empty_summary[[as.character(group_level)]] <- "NA"
+        }
+        results_list[[var]] <- empty_summary
+        next
+      }
+      
+      # Create contingency table (excluding NAs for statistical tests)
+      contingency_table <- table(data[[var]], data[[group_var]], useNA = "no")
+      
+      # Calculate non-NA counts by group for the summary row
+      non_na_counts <- data %>%
+        dplyr::select(dplyr::all_of(var), dplyr::all_of(group_var)) %>%
+        dplyr::filter(!is.na(.data[[var]])) %>%
+        dplyr::group_by(across(dplyr::all_of(group_var))) %>%
+        dplyr::summarise(non_na_count = dplyr::n(), .groups = "drop") %>%
+        tidyr::pivot_wider(names_from = dplyr::all_of(group_var), values_from = non_na_count) %>%
+        dplyr::mutate(dplyr::across(-dplyr::any_of(c("Variable", "Statistic", "Factor_Level")), as.character))
+      
+      # Calculate percentages and format (excluding NAs)
+      category_data <- data %>%
+        dplyr::select(dplyr::all_of(var), dplyr::all_of(group_var)) %>%
+        dplyr::filter(!is.na(.data[[var]])) %>%  # Remove NA values for percentage calculation
+        dplyr::group_by(across(dplyr::all_of(group_var)), .data[[var]]) %>%
+        dplyr::summarise(Count = dplyr::n(), .groups = "drop") %>%
+        dplyr::group_by(across(dplyr::all_of(group_var))) %>%
+        dplyr::mutate(Percentage = Count / sum(Count) * 100) %>%
+        dplyr::ungroup() %>%
+        dplyr::mutate(
+          summary_stat = paste0(Count, " (", round(Percentage, 1), "%)"),
+          Factor_Level = as.character(.data[[var]])
+        ) %>%
+        dplyr::select(Factor_Level, dplyr::all_of(group_var), summary_stat) %>%
+        tidyr::pivot_wider(names_from = dplyr::all_of(group_var), values_from = summary_stat)
+      
+      # Add metadata to category data
+      category_data <- category_data %>%
+        dplyr::mutate(
+          Variable = var, 
+          Statistic = "Count (%)", 
+          .before = 1
+        )
+      
+      # Create the non-NA count summary row
+      non_na_summary <- non_na_counts %>%
+        dplyr::mutate(
+          Variable = var,
+          Statistic = "Non-missing observations",
+          Factor_Level = NA_character_,
+          .before = 1
+        )
+      
+      # Combine category data first, then non-NA summary row
+      combined_data <- dplyr::bind_rows(category_data, non_na_summary)
+      results_list[[var]] <- combined_data
+    }
   }
   
-  # Combine all results
+  # Combine all results in the order they were processed
   descriptive_table <- dplyr::bind_rows(results_list) %>%
     dplyr::select(Variable, Statistic, Factor_Level, dplyr::everything())
   
@@ -247,36 +276,3 @@ create_descriptive_table <- function(data, group_var, continuous_vars = NULL, fa
     )
   }
 }
-
-# Example usage with variable labels:
-# 
-# # Create variable label mapping
-# variable_labels <- c(
-#   "period" = "Diagnosis period",
-#   "parity" = "Parity", 
-#   "age_1st_child" = "Age at first child",
-#   "Education_2cat" = "Education level",
-#   "FH_BC_bl_50" = "Family history of breast cancer",
-#   "Alcohol_day" = "Alcohol consumption (g/day)",
-#   "smoking_packyears" = "Smoking (pack-years)",
-#   "pd_3group" = "Parenchymal density",
-#   "pd_BIRADs" = "BI-RADS density",
-#   "bmi_cat" = "BMI category",
-#   "risk_breastcancer_own_10yr" = "10-year breast cancer risk",
-#   "GRS_BC" = "Genetic risk score",
-#   "protein_LOF_rare_variants_exonic" = "Protein-truncating variants",
-#   "pinkcat" = "PINK1 category",
-#   "BOADICEA" = "BOADICEA risk score"
-# )
-#
-# create_descriptive_table(
-#   data = pop_baseline,
-#   group_var = "included_2visits",
-#   continuous_vars = c("Age", "HbA1c_result", "diabetes_duration"),
-#   factor_vars = c("sex", "Indigenous", "RA3"),
-#   use_median = TRUE,
-#   digits = 2,
-#   exact_tests = FALSE,
-#   variable_labels = variable_labels
-# )
-

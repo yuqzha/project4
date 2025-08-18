@@ -18,51 +18,69 @@ library(knitr)
 library(kableExtra)
 ```
 
-# define var list
-```{r setup, include=FALSE}
-source("FUN_desc_table.R")
-
+## Create variable list & label mapping
+```{r}
+# Define your variable lists
 factors1 <- c("year1","period", "parity","age_1st_child", "Education_2cat", "FH_BC_bl_50") 
 tc <- c("T_pad_c", "N_pad_positive", "grade", "ER_negative", "PR_negative", "HER2_positive", "ki67", "histology")
 trt <- c("post_chemo", "post_radio", "post_endo") 
+factors2 <- c("pd_BIRADs","pd_3group","bmi_cat", "Alcohol_day", "smoking_packyears","risk_breastcancer_own_10yr","GRS_BC", "protein_LOF_rare_variants_exonic", "pinkcat","BOADICEA")
 
-factor2_cont <- c("Alcohol_day", "smoking_packyears")
-factors2 <- c("pd_BIRADs","pd_3group","bmi_cat", "risk_breastcancer_own_10yr","GRS_BC", "protein_LOF_rare_variants_exonic", "pinkcat","BOADICEA")
-```
+# Define ONLY continuous variables (everything else will be treated as factors automatically)
+continuous_vars <- c("Alcohol_day", "smoking_packyears")
 
-## Create variable label mapping
-```{r}
+# Combine all variables you want to analyze
+all_analysis_vars <- c(factors1, tc, trt, factors2)
+
+# Create variable labels for better presentation
 variable_labels <- c(
-  # Cohort 1 variables (factors1)
+  # Basic demographics and history
   "year1" = "Year of diagnosis",
-  "period" = "Diagnosis period", 
-  "parity" = "Parity",
+  "period" = "Diagnosis period",
+  "parity" = "Parity", 
   "age_1st_child" = "Age at first child",
   "Education_2cat" = "Education level",
-  "FH_BC_bl_50" = "Family history of breast cancer (≤50 years)",
+  "FH_BC_bl_50" = "Family history of breast cancer",
   
-  # Cohort 2 continuous variables
+  # Tumor characteristics
+  "T_pad_c" = "Tumor size (T stage)",
+  "N_pad_positive" = "Lymph node status",
+  "grade" = "Tumor grade",
+  "ER_negative" = "ER negative",
+  "PR_negative" = "PR negative", 
+  "HER2_positive" = "HER2 positive",
+  "ki67" = "Ki-67 index",
+  "histology" = "Histological type",
+  
+  # Treatment variables
+  "post_chemo" = "Post-operative chemotherapy",
+  "post_radio" = "Post-operative radiotherapy", 
+  "post_endo" = "Post-operative endocrine therapy",
+  
+  # Additional risk factors
+  "pd_BIRADs" = "Breast density (BI-RADS)",
+  "pd_3group" = "Breast density (3 groups)",
+  "bmi_cat" = "BMI",
   "Alcohol_day" = "Alcohol consumption (g/day)",
   "smoking_packyears" = "Smoking (pack-years)",
-  
-  # Cohort 2 factor variables (factors2)
-  "pd_3group" = "Breast density (3 groups)",
-  "pd_BIRADs" = "Breast density (BI-RADS)",
-  "bmi_cat" = "BMI", 
-  "risk_breastcancer_own_10yr" = "10-year breast cancer risk",
-  "GRS_BC" = "Genetic risk score for breast cancer",
+  "risk_breastcancer_own_10yr" = "10-year breast cancer risk score",
+  "GRS_BC" = "Genetic risk score",
   "protein_LOF_rare_variants_exonic" = "Protein-truncating variants",
-  "pinkcat" = "PINK PTV",
+  "pinkcat" = "PINK1 PTV",
   "BOADICEA" = "BOADICEA PTV"
 )
+```
+
+```{r}
+source("FUN_desc_table.R")
 ```
 
 ```{r}
 create_descriptive_table(
   data = cohort1,
   group_var = "detection_mode",
-  continuous_vars = c(),
-  factor_vars = factors1,
+  variables = c(factors1, tc, trt),
+  continuous_vars = NULL,
   use_median = TRUE,
   digits = 2,
   exact_tests = FALSE,
@@ -74,8 +92,8 @@ create_descriptive_table(
 create_descriptive_table(
   data = cohort2,
   group_var = "detection_mode",
-  continuous_vars = factor2_cont,
-  factor_vars = factors2,
+  variables = c(factors1, tc, trt, factors2),
+  continuous_vars = continuous_vars,
   use_median = TRUE,
   digits = 2,
   exact_tests = FALSE,
