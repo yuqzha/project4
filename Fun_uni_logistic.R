@@ -20,7 +20,7 @@ univariable_logistic <- function(data, outcome_var, predictor_vars, group_var = 
     if (is.null(group_var)) {
       group_results <- data %>%
         filter(!is.na(!!predictor_sym)) %>%
-        do(tidy(glm(!!outcome_sym ~ !!predictor_sym, data = ., family = binomial), conf.int = TRUE)) %>%
+        do(tidy(glm(!!outcome_sym ~ !!predictor_sym , data = ., family = binomial), conf.int = TRUE)) %>%
         # Exponentiate estimate and confidence intervals
         mutate(
           est = exp(estimate), ## these exp can be removed if add exponentiate = T to tidy

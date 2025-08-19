@@ -12,13 +12,18 @@ library(tidyverse)
 ## by density
 
 ```{r}
-factors2 <- c("T_pad_c", "N_pad_positive", "grade", "ER_negative", "PR_negative", "HER2_positive", "ki67", "histology")
+factors2 <- c("T_pad_c_2cat", "N_pad_positive", "grade", "ER_negative", "PR_negative", "HER2_positive", "ki67", "histology")
 
 cohort <- cohort2 %>%
-  filter(detection_mode %in% c(1,2)) |> 
   filter(abs(bc_diagdate - pd_date) <= 364.25*2) |> # mammogram date within 2y
   # filter(!is.na(pd_3group)) |> 
-  mutate(across(all_of(factors2), factor)) # |> filter(M_stage != 1)
+  mutate(
+    histology = case_when(
+      histology %in% c("duc+lob","lobular") ~ "lobular",
+      histology %in% c("other","other invasive") ~ "other",
+      TRUE ~ histology),
+    histology = factor(histology, levels = c("ductal", "lobular", "other")),
+    across(all_of(factors2), factor)) # |> filter(M_stage != 1)
 ```
 
 ## strata by pd
@@ -47,74 +52,28 @@ cohort <- cohort |>
   )
 
 # Then run the analysis
+source("FUN_uni_logistic.R")
 results <- univariable_logistic(data = cohort, 
-                                         group_var = "pd_3group",#"pd_BIRADs",#"pd_3group", #"sc_ic", 
+                                         group_var = "pd_BIRADs_3cat",#"pd_3group", #"sc_ic", 
                                          outcome_var =  "sc_ic", 
                                          predictor_vars = factors2) 
 print(results)
 # Check what terms are actually generated
 print(unique(results$term))
+
+source("FUN_logistic_loop.R")
+results <- logis_loop(data = cohort,
+                                group_var = "pd_BIRADs_3cat",#"pd_3group", #"sc_ic",
+                                outcome_var =  "sc_ic",
+                                predictor_vars = factors2,
+                                covariates = c("age_at_diagnosis")) 
+print(results)
 ```
 ## filter results in terms
 ```{r}
 source("OR_tc_filter_results.R")
 ```
 
-
-by pd strata
-```{r}
-filtered_results <- filtered_results |> 
-    mutate(
-    est = case_when(
-      term == "histologylobular" & pd_3group == "[0,20]" ~ 1.11, 
-      term == "histologylobular" & pd_3group == "(40,100]" ~ 1.66, 
-      term == "N_pad_positive1" & pd_3group == "(40,100]"~ 1.56,
-      term == "ki673" & pd_3group == "(40,100]"~ 2.03,
-      TRUE ~ est),
-    min95 = case_when(
-       term == "histologylobular" & pd_3group == "[0,20]"~ 0.70, 
-       term == "histologylobular" & pd_3group == "(40,100]"~ 0.86, 
-       term == "T_pad_c2" & pd_3group == "(40,100]"~ 0.90,
-       term == "N_pad_positive1" & pd_3group == "(40,100]"~ 0.98,
-       term == "ki673" & pd_3group == "(40,100]"~ 0.95,
-       TRUE ~ min95),
-     max95 = case_when(
-       term == "histologylobular" & pd_3group == "[0,20]"~ 1.72, 
-       term == "histologylobular" & pd_3group == "(40,100]"~  3.29, 
-       term == "T_pad_c2" & pd_3group == "(40,100]"~ 6.78,
-       term == "ki673" & pd_3group == "(40,100]"~ 3.98,
-       TRUE ~ max95),
-    p.value= case_when(
-       term == "T_pad_c2" & pd_3group == "(40,100]"~ 0.06,
-       term == "N_pad_positive1" & pd_3group == "(40,100]"~ 0.06,
-       term == "ki673" & pd_3group == "(40,100]"~ 0.06,
-      TRUE ~ p.value)
-   # p.value = ifelse(term %in% c("histologylobular", "pd_3group[0,20]"), 0.01, p.value),
-  # max95 = ifelse(term == "pd_3group[0,20]", 1.00, max95) 
-  )
-
-filtered_results <- filtered_results |> 
-  mutate(
-    association = case_when(
-      est > 1 & p.value < 0.05 ~ "Positive",
-      est < 1 & p.value < 0.05 ~ "Negative",
-      TRUE ~ "NS"))
-```
-
-
-```{r}
-## label facet
-pd_3group_label <- c(
-  "[0,20]" = "Low density (<=20%)",
-  "(20,40]" = "Medium density (20-40%)",
-  "(40,100]" = "High density (>40%)"
-)
-
-pd_2group_label <- c(
-  "[0,20]" = "Low density (<=20%)",
-  "(20,100]" = "High density (>20%)"
-)
-```
 ### only low and high
 ```{r}
 filtered_results <- filtered_results |> 
@@ -123,11 +82,6 @@ filtered_results <- filtered_results |>
 
 ### age plot
 ```{r}
-scic_label <- c(
-  "0" = "ScrCa",
-  "1"= "IntCa"
-)
-
 OR_pd <- ggplot(filtered_results, 
                      aes(x = reorder(label, -order), y = est, color = association)) +
   theme_bw(base_size = 12) +
@@ -141,7 +95,7 @@ scale_y_log10(
                 width = 0.2, size = 0.5) +
   # Add text with formatted OR and CI
   geom_text(
-    aes(y = 11,
+    aes(y = 5,
       label = sprintf("%.2f (%.2f, %.2f)", est, min95, max95),
       color = association),
     position = position_dodge(width = 0.5),
@@ -149,11 +103,11 @@ scale_y_log10(
     vjust = 0.5,  # Center vertically
     size = 3
   ) +
-  labs(title = "OR of low density (<=20%) vs. high density (>40%)",
+  labs(title = "IntCa vs. ScrCa phenotype by breast density (BIRADS)",
        x="",
   y="Odds ratio") +
   coord_flip() +
-  facet_grid(.~ pd_3group) + # pd_3group, labeller = labeller(pd_3group = pd_3group_label)) +
+  facet_grid(.~ pd_BIRADs_3cat) + # pd_3group, labeller = labeller(pd_3group = pd_3group_label)) +
   scale_color_manual(values = c(
     "Positive" = "maroon",
     "Negative" = "forestgreen",
@@ -171,6 +125,11 @@ scale_y_log10(
   )
 
 print(OR_pd)
+```
+```{r}
+OR_pd_age <- OR_pd
+
+OR_pd_compare <- OR_pd / OR_pd_age
 ```
 
 ## strata by calc

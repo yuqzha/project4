@@ -6,24 +6,22 @@ output: html_document
 ---
 
 ```{r}
-tc <- c("T_pad_c", "N_pad_positive", "grade", "ER_negative", "PR_negative", "HER2_positive", "ki67", "histology")
+tc <- c("T_pad_c_2cat", "N_pad_positive", "grade", "ER_negative", "PR_negative", "HER2_positive", "ki67", "histology")
 
 ```
 
 ## by age
 ```{r}
 cohort <- cohort1 %>%
-  mutate(detection_mode = detection_mode_1) |> 
-  filter(detection_mode %in% c(1,2)) |> 
   mutate(across(all_of(tc), factor)) |> 
-  filter(M_stage != 1) |> 
+  # filter(M_stage != 1) |> 
   mutate(age_young = case_when(
     age_at_diagnosis <= 49 ~ 1,
     age_at_diagnosis >=60 ~ 0,
     TRUE ~ NA_real_),
     sc_ic = case_when(
-     detection_mode == 1 ~ 0,
-     detection_mode == 2 ~ 1,
+     detection_mode == "ScrCa" ~ 0,
+     detection_mode == "IntCa" ~ 1,
      TRUE ~ NA_real_)
     )
 
@@ -151,10 +149,10 @@ print(OR_age)
 ## year
 ```{r}
 # Then run the analysis
-cohort_ic <- cohort |> filter(detection_mode == 2)
+cohort_ic <- cohort |> filter(detection_mode == "IntCa")
 
 results <- univariable_logistic(data = cohort_ic, 
-                                         group_var = "detection_mode", #"sc_ic", 
+                                         group_var = NULL, #"sc_ic", 
                                          outcome_var =  "year1", 
                                          predictor_vars = tc) 
 print(results)
@@ -231,6 +229,22 @@ fig2 <-  (OR_age + ggtitle("IntCa vs. ScrCa by age at diagnosis")) +
 fig2 <- fig2 + plot_layout(widths = c(3, 2.3, 1))
 print(fig2)
 ```
+
+## v3
+```{r}
+OR_age <- OR_age + theme(legend.position = "none")
+OR_pd <- OR_pd + theme(legend.position = "none") 
+OR_year_no_y <- OR_year_no_y + theme(legend.position = "none")
+
+fig2v3 <- ((OR_age + ggtitle("A.IntCa vs. ScrCa by age at diagnosis")) + plot_spacer() +
+        plot_layout(widths = c(3, 1))) /
+     ((OR_pd + ggtitle("B.IntCa vs. ScrCa by breast density (%)")) + 
+      (OR_year_no_y + ggtitle("C.IntCa year 1 vs. year 2")) + 
+       plot_layout(widths = c(3, 1))) +
+   plot_layout(heights = c(1, 1)) 
+```
+
+
 ## combine, top and bottom
 ```{r}
 # Combine with patchwork
@@ -241,7 +255,7 @@ combined_plot <- OR_age /
 combined_plot <- (OR_age + ggtitle("A.IntCa vs. ScrCa by age at diagnosis")) / 
                  ((OR_pd + ggtitle("B.IntCa vs. ScrCa by breast density (%)")) + 
                   (OR_year_no_y + ggtitle("C.IntCa year 1 vs. year 2")) + 
-                  plot_layout(widths = c(2, 1)))
+                  plot_layout(widths = c(3, 1)))
 
 fig2v2 <- combined_plot
 print(fig2v2)
