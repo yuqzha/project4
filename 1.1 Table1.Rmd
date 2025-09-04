@@ -1,5 +1,5 @@
 ---
-title: "1.1 Table1"
+title: "eTable1 (supplementary)"
 author: "Yuqi Zhang"
 date: "2025-08-15"
 output:
@@ -8,18 +8,18 @@ output:
     keep_md: true
 ---
 
-```{r}
+```{r, echo=FALSE}
 load("/Users/yuqzha/LIBRO1_BCSTO/IC_timing_prognosis/data/cohorts.RData")
 ```
 
-```{r}
+```{r, echo=FALSE, message=FALSE}
 library(tidyverse)
 library(knitr)
 library(kableExtra)
 ```
 
 ## Create variable list & label mapping
-```{r}
+```{r, echo=FALSE}
 # Define your variable lists
 factors1 <- c("year1","period", "parity","age_1st_child", "Education_2cat", "FH_BC_bl_50") 
 tc <- c("T_pad_c", "N_pad_positive", "grade", "ER_negative", "PR_negative", "HER2_positive", "ki67", "histology")
@@ -71,13 +71,14 @@ variable_labels <- c(
 )
 ```
 
-```{r}
+```{r, echo=FALSE}
 # source("FUN_desc_table.R") # does not work with merging rows, so changed to flextable
 
 source("FUN_desc_flextable.R")
 ```
 
-```{r}
+## eTable 1. Stockholm women cohort
+```{r, echo=FALSE}
 create_descriptive_flextable(
   data = cohort1,
   group_var = "detection_mode",
@@ -90,6 +91,7 @@ create_descriptive_flextable(
 )
 ```
 
+## eTable 1. pKARMA and KARMA cohorts
 ```{r}
 create_descriptive_flextable(
   data = cohort2,

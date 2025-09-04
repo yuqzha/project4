@@ -31,26 +31,9 @@ cohort <- cohort2 %>%
 cohort <- cohort |> 
   filter(pd_3group %in% c("[0,20]", "(40,100]")) |> 
   mutate(pd_3group = factor(pd_3group, levels = c("[0,20]","(40,100]"))) 
-# A+B, C,D
-cohort <- cohort |> 
-  mutate(
-    pd_BIRADs = case_when(
-      pd_BIRADs %in% c("[0,2]", "(2,18]") ~ "A+B",
-      pd_BIRADs == "(18,49]" ~ "C",
-      pd_BIRADs == "(49,100]" ~ "D",
-    ),
-    pd_BIRADs = factor(pd_BIRADs, levels = c("A+B", "C","D"))
-  )
+```
 
-# A+B, C+D
-cohort <- cohort |> 
-  mutate(
-    pd_BIRADs = case_when(
-      pd_BIRADs %in% c("[0,2]", "(2,18]") ~ "A+B",
-      TRUE ~ "C+D"
-    )
-  )
-
+```{r}
 # Then run the analysis
 source("FUN_uni_logistic.R")
 results <- univariable_logistic(data = cohort, 
@@ -58,6 +41,10 @@ results <- univariable_logistic(data = cohort,
                                          outcome_var =  "sc_ic", 
                                          predictor_vars = factors2) 
 print(results)
+```
+
+## logistic, age-adjusted
+```{r}
 # Check what terms are actually generated
 print(unique(results$term))
 
@@ -76,8 +63,8 @@ source("OR_tc_filter_results.R")
 
 ### only low and high
 ```{r}
-filtered_results <- filtered_results |> 
-  filter(pd_3group %in% c("[0,20]", "(40,100]"))
+results_df <- filtered_results
+source("OR_tc_compare_group.R")
 ```
 
 ### age plot
