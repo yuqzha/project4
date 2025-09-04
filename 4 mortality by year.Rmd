@@ -1,7 +1,7 @@
 ---
-title: "4 mortality"
+title: "4 mortality by year"
 author: "Yuqi Zhang"
-date: "2025-04-26"
+date: "2025-08-26"
 output:
   word_document:
     keep_md: true
@@ -92,13 +92,14 @@ source("FUN_coxph_loop.R")
 cohort <- cohort1 %>%
   #filter(M_stage == 0 | is.na(M_stage)) |> #
   #filter(insitu != 1) |> 
-  mutate(across(all_of(c(factors1, tc, trt)), factor)) 
+  mutate(across(all_of(c(factors1, tc, trt)), factor)) |> 
+  filter(detection_mode == "IntCa")
 
 # Then run the analysis
 cox0 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var",
                    predictor_vars = factors1,
                    covariates = NULL,
-                   group_var = "detection_mode") |> 
+                   group_var = "year1") |> 
   mutate(cohort = "Cohort 1",
          model = "Model 0")
 
@@ -106,7 +107,7 @@ cox0 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var
 cox1 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var",
                    predictor_vars = factors1,
                    covariates = covariate1,
-                   group_var = "detection_mode") |> 
+                   group_var = "year1") |> 
     mutate(cohort = "Cohort 1",
          model = "Model 1")
 
@@ -114,7 +115,7 @@ cox1 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var
 cox2 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var",
                    predictor_vars = factors1,
                    covariates = covariate2,
-                   group_var = "detection_mode") |> 
+                   group_var = "year1") |> 
     mutate(cohort = "Cohort 1",
          model = "Model 2")
 
@@ -122,7 +123,7 @@ cox2 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var
 cox3 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var",
                    predictor_vars = factors1,
                    covariates = covariate3,
-                   group_var = "detection_mode") |> 
+                   group_var = "year1") |> 
     mutate(cohort = "Cohort 1",
          model = "Model 3")
 
@@ -132,12 +133,11 @@ result1 <- bind_rows(cox1, cox2, cox3)
 
 ## cohort 2
 ```{r}
-factors2 <- c("FH_BC_bl_40", "FH_BC_bl_50", "FH_BC_bl_median", "Breast_n_bi", "pd_BIRADs","bmi_cat", "hrt_ever","hrt_ever_reg","Alcohol_day", "smoking_packyears", "risk_breastcancer_own_5yr", "risk_breastcancer_own_10yr","risk_breastcancer_own_lifetime","GRS_BC", "protein_LOF_rare_variants_exonic", "pinkcat","BOADICEA") #pd_3group "masses_3cat","masses_dif_3cat","masses_dif", "smoking_status_dummy", "smoking_status_dummy2",
 
 ## as of Aug 3
-#factors2 <- c("pd_3group","pd_BIRADs","pd_BIRADs_3cat","pd_BIRADs_2cat","bmi_cat", "Alcohol_day", "smoking_packyears", "risk_breastcancer_own_10yr","GRS_BC", "protein_LOF_rare_variants_exonic", "pinkcat","BOADICEA")
+factors2 <- c("pd_3group","pd_BIRADs","pd_BIRADs_3cat","pd_BIRADs_2cat","bmi_cat", "Alcohol_day", "smoking_packyears", "risk_breastcancer_own_10yr","GRS_BC", "protein_LOF_rare_variants_exonic", "pinkcat","BOADICEA")
 
-factors2 <- c("bmi_cat", "Alcohol_day", "smoking_packyears", "risk_breastcancer_own_10yr","GRS_BC", "protein_LOF_rare_variants_exonic", "pinkcat","BOADICEA")
+#factors2 <- c("bmi_cat", "Alcohol_day", "smoking_packyears", "risk_breastcancer_own_10yr","GRS_BC", "protein_LOF_rare_variants_exonic", "pinkcat","BOADICEA")
 
 # Convert columns to factors before analysis
 cohort2 <- cohort2 |> 
@@ -166,6 +166,7 @@ cohort2 <- cohort2 |>
 
 # re-order some reference groups   
 cohort <- cohort2 |> 
+    filter(detection_mode == "IntCa") |> 
     mutate(
     pd_BIRADs = factor(pd_BIRADs,
                        levels = c("(18,49]", "[0,2]", "(2,18]","(49,100]")),
@@ -185,7 +186,7 @@ cohort <- cohort2 |>
 cox0 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var",
                    predictor_vars = factors2,
                    covariates = NULL,
-                   group_var = "detection_mode") |> 
+                   group_var = "year1") |> 
   mutate(cohort = "Cohort 2",
          model = "Model 0")
 
@@ -193,7 +194,7 @@ cox0 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var
 cox1 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var",
                    predictor_vars = factors2,
                    covariates = covariate1,
-                   group_var = "detection_mode") |> 
+                   group_var = "year1") |> 
   mutate(cohort = "Cohort 2",
          model = "Model 1")
 
@@ -201,7 +202,7 @@ cox1 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var
 cox2 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var",
                    predictor_vars = factors2,
                    covariates = covariate2,
-                   group_var = "detection_mode") |> 
+                   group_var = "year1") |> 
   mutate(cohort = "Cohort 2",
          model = "Model 2")
 
@@ -209,23 +210,19 @@ cox2 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var
 cox3 <- coxph_loop(data = cohort, outcome_var = "death_BC", time_var = "time_var",
                    predictor_vars = factors2,
                    covariates = covariate3,
-                   group_var = "detection_mode") |> 
+                   group_var = "year1") |> 
   mutate(cohort = "Cohort 2",
          model = "Model 3")
 
 result2 <- bind_rows(cox1, cox2, cox3)
 ```
 
-```{r}
-#source("FUN_coxph_loop_debug.R")
-```
-
 ## result bind, order, and pivot
 ```{r}
 # create order of factors, choose one set of model from each cohort and bind
 order <- bind_rows(
-  result1 %>% filter(model == "Model 1" & detection_mode == "ScrCa") %>% select(predictor_var, Level),
-  result2 %>% filter(model == "Model 1" & detection_mode == "ScrCa") %>% select(predictor_var, Level)
+  result1 %>% filter(model == "Model 1" & year1 == "Year 1") %>% select(predictor_var, Level),
+  result2 %>% filter(model == "Model 1" & year1 == "Year 1") %>% select(predictor_var, Level)
 )  |> 
   mutate(order = row_number())
 
@@ -237,7 +234,7 @@ result <- bind_rows(result1, result2) |>
 ```{r}
 # First, reshape your data to wide format
 result <- result |> 
-  mutate(group = paste(detection_mode, model, sep = "_"))
+  mutate(group = paste(year1, model, sep = "_"))
 
 dat <- result |> 
   select(predictor_var, Level,order, group, est)
@@ -248,7 +245,7 @@ dat_wide <- dat %>%
               id_cols = c(predictor_var, Level, order))
 
 dat_wide <- dat_wide |> 
-  select(predictor_var, Level, order, starts_with(c("ScrCa_", "IntCa_")))
+  select(predictor_var, Level, order, starts_with(c("Year 1_", "Year 2_")))
 
 
 ```
@@ -284,7 +281,7 @@ dat_wide <- dat_wide %>%
 ft <- dat_wide %>%
   flextable::flextable() %>%
   # Add the main header row for ScrCa and IntCa
-  flextable::add_header_row(values = c("", "", rep("ScrCa", 3), rep("IntCa", 3)), top = TRUE) %>%
+  flextable::add_header_row(values = c("", "", rep("Year 2", 3), rep("Year 1", 3)), top = TRUE) %>%
   # Merge cells for same predictor variables
   flextable::merge_v(j = "factor_labeled", part = "body") %>%
   # Merge cells for headers
@@ -302,4 +299,3 @@ ft <- dat_wide %>%
 # Print the table
 ft
 ```
-

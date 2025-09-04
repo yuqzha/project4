@@ -1,0 +1,293 @@
+---
+title: "cumhaz and other"
+author: "Yuqi Zhang"
+date: "2025-08-16"
+output: html_document
+---
+
+
+## cumhaz
+```{r}
+source("plot_cumulative_hazard.R")
+two_color <- c("#1642BF", "#FAA31B")
+
+p0 <- plot_cumulative_hazard(cohort, 
+                            "time_var", "death_BC", 
+                            detection_mode, 
+                            xlim = c(0, 10), ylim = c(0, 0.2),
+                            group_labels =c("ScrCa","IntCa"),
+                            colors = two_color)
+print(p0)
+
+# Use with strata
+# by period
+cohort <- cohort |> 
+  mutate(period = case_when(
+    year >=1992 & year <2000 ~ 1,
+    year >=2000 & year <2011 ~ 2,
+    year >=2011 & year <=2023 ~ 3,
+    TRUE ~ NA_real_),
+    period = factor(period))
+
+p1 <- plot_cumulative_hazard(cohort, 
+                            "time_var", "death_BC", 
+                            detection_mode, strata1 = period,
+                            xlim = c(0, 10), ylim = c(0, 0.2),
+                            group_labels =c("ScrCa","IntCa"),
+                            colors = two_color)
+print(p1)
+
+## not plot period as strata but different linetypes
+source("plot_cumulative_hazard_v2.R")
+
+p1v2 <- plot_cumulative_hazard_v2(cohort, 
+                            "time_var", "death_BC", 
+                            detection_mode, strata1 = period,
+                            xlim = c(0, 10), ylim = c(0, 0.2),
+                            group_labels = c("ScrCa","IntCa"),
+                            strata1_labels = c("1992-1999", "2000-2010", "2011-2023"),  # optional
+                            colors = two_color,
+                            linetypes = c("solid", "dashed", "dotted"))  # optional
+print(p1v2)
+
+# by age at diagnosis
+p2 <- plot_cumulative_hazard(cohort, 
+                            "time_var", "death_BC", 
+                            detection_mode_1, strata1 = age_cat,
+                            xlim = c(0, 10), ylim = c(0, 0.2),
+                            group_labels =c("ScrCa","IntCa"),
+                            colors = two_color)
+print(p2)
+
+## by period and age_cat
+p3 <- plot_cumulative_hazard(cohort, 
+                            "time_var", "death_BC", 
+                            detection_mode_1, strata1 = age_cat, strata2 = period,
+                            xlim = c(0, 10), ylim = c(0, 0.3),
+                            group_labels =c("ScrCa","IntCa"),
+                            colors = two_color)
+print(p3)
+
+p0 <- p0 + ggtitle("Cumulative BC mortality since diagnosis")
+p1 <- p1 + ggtitle("By diagnosis period") 
+p2 <- p2 + ggtitle("By age at diagnosis")
+p3 <- p3 + ggtitle("By diagnosis period and age")
+# combine using patchwork
+library(patchwork)
+cumhaz1 <- (p0 / p3) | (p1 / p2)
+```
+
+## cumhaz: start time from last screening date
+```{r}
+p0 <- plot_cumulative_hazard(cohort, 
+                            "(outcome_date - as.numeric(x_Screening_ExaminationDate)) / 365", "death_BC", 
+                            detection_mode_1, 
+                            xlim = c(0, 10), ylim = c(0, 0.2),
+                            group_labels =c("ScrCa","IntCa"),
+                            colors = two_color)
+print(p0)
+
+# Use with strata
+# by period
+p1 <- plot_cumulative_hazard(cohort, 
+                            "(outcome_date - as.numeric(x_Screening_ExaminationDate)) / 365", "death_BC", 
+                            detection_mode_1, strata1 = period,
+                            xlim = c(0, 10), ylim = c(0, 0.2),
+                            group_labels =c("ScrCa","IntCa"),
+                            colors = two_color)
+print(p1)
+
+# by age at diagnosis
+p2 <- plot_cumulative_hazard(cohort, 
+                            "(outcome_date - as.numeric(x_Screening_ExaminationDate)) / 365", "death_BC", 
+                            detection_mode_1, strata1 = age_cat,
+                            xlim = c(0, 10), ylim = c(0, 0.2),
+                            group_labels =c("ScrCa","IntCa"),
+                            colors = two_color)
+print(p2)
+
+## by period and age_cat
+p3 <- plot_cumulative_hazard(cohort, 
+                            "(outcome_date - as.numeric(x_Screening_ExaminationDate)) / 365", "death_BC", 
+                            detection_mode_1, strata1 = age_cat, strata2 = period,
+                            xlim = c(0, 10), ylim = c(0, 0.3),
+                            group_labels =c("ScrCa","IntCa"),
+                            colors = two_color)
+print(p3)
+
+p0 <- p0 + ggtitle("Cumulative BC mortality since last screening")
+p1 <- p1 + ggtitle("By diagnosis period") 
+p2 <- p2 + ggtitle("By age at diagnosis")
+p3 <- p3 + ggtitle("By diagnosis period and age")
+# combine using patchwork
+library(patchwork)
+cumhaz2 <- (p0 / p3) | (p1 / p2)
+```
+
+## competing risk: cmprsk
+```{r}
+library(cmprsk)
+# Calculate CIF
+cif_result <- cuminc(ftime = cohort$time_var, 
+                     fstatus = cohort$death_BC,  # 0=censored, 1=BC death, 2=other death
+                     group = cohort$detection_mode_1)
+
+# Plot
+plot(cif_result, 
+     curvlab = c("ScrCa - BC death", "IntCa - BC death","ScrCa - other death", "IntCa - other death"),
+     xlab = "Time", 
+     ylab = "Cumulative Incidence")
+```
+## cumhaz by strata
+```{r}
+library(cmprsk)
+library(purrr)
+library(dplyr)
+library(ggplot2)
+library(broom)
+
+# One-liner to get all CIF results
+cohort_split <- cohort %>%
+  split(.$age_cat)   # Split by strata
+
+cif_all <-   map_dfr(~ {
+    cif_result <- cuminc(ftime = .x$time_var,
+                         fstatus = .x$death_BC,
+                         group = .x$detection_mode_1)
+    tidy(cif_result)
+  }, .id = "age_cat")
+
+# Plot with facets
+cif_all %>%
+  filter(outcome == 1) %>%  # BC deaths only
+  ggplot(aes(x = time, y = estimate, color = strata)) +
+  geom_step() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = strata), 
+              alpha = 0.2) +
+  facet_wrap(~ strata_var, scales = "free") +
+  labs(x = "Time", 
+       y = "Cumulative Incidence of BC Death") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+```{r}
+library(cmprsk)
+library(purrr)
+library(dplyr)
+library(broom)
+
+# Create a safe version of our function
+safe_cuminc <- possibly(function(data) {
+  if(nrow(data) < 2 || sum(data$death_BC > 0) == 0) {
+    return(NULL)
+  }
+  
+  cif_result <- cuminc(ftime = data$time_var,
+                      fstatus = data$death_BC,
+                      group = data$detection_mode_1)
+  
+  return(tidy(cif_result))
+}, otherwise = NULL)
+
+# Apply to split data
+cif_all <- cohort %>%
+  filter(!is.na(time_var), !is.na(death_BC), !is.na(detection_mode_1)) %>%
+  split(.$age_cat) %>%
+  map(safe_cuminc) %>%
+  # Remove NULL results
+  discard(is.null) %>%
+  # Add age category names and combine
+  imap_dfr(~ .x %>% mutate(age_cat = .y))
+   
+```
+
+## univariable Cox
+```{r}
+surv_uni <- function(outcome, variable) { 
+summary(coxph(outcome ~ variable + age_at_diagnosis , data = cohort))
+ }
+```
+
+```{r}
+
+surv_uni(BC_surv, cohort$Education_lisa)
+surv_uni(BC_surv, cohort$pd_3group)
+surv_uni(BC_surv, cohort$bmi_2cat)
+surv_uni(BC_surv, cohort$age_1st_child)
+surv_uni(BC_surv, cohort$calcs_bi)
+surv_uni(BC_surv, cohort$masses_bi)
+```
+
+### stratified analysis
+```{r}
+# Stratified Cox model - assumes proportional hazards within strata
+# but allows different baseline hazards for each stratum
+model_stratified <- coxph(BC_surv ~ bmi_2cat + age_at_diagnosis + strata(pd_3group), 
+                         data = cohort)
+summary(model_stratified)
+
+model_stratified <- coxph(BC_surv ~ pd_3group + age_at_diagnosis + strata(bmi_2cat), 
+                         data = cohort)
+summary(model_stratified)
+```
+
+### adjusting for TC
+```{r}
+surv_inc_tc <- function(outcome, variable) { 
+summary(coxph(outcome ~ variable + age_at_diagnosis + T_pad_c + N_pad_positive + grade, data = cohort))
+}
+surv_inc_tc(BC_surv, cohort$bmi_cat)
+surv_inc_tc(BC_surv, cohort$pd_3group)
+surv_inc_tc(BC_surv, cohort$calcs_bi)
+surv_inc_tc(BC_surv, cohort$masses_bi)
+```
+```{r}
+surv_inc_tc(BC_surv, cohort$bmi_cat)
+```
+
+```{r}
+# Assuming your data is called 'data' and pd_3group has 3 levels
+# Fit separate models for each density group
+model_bmi1 <- coxph(Surv(outcome_date - as.numeric(diadat),death_BC) ~ pd_2group + age_at_diagnosis, 
+                          data = subset(cohort, bmi_2cat == "[0,25]"))
+model_bmi2 <- coxph(Surv(outcome_date - as.numeric(diadat),death_BC) ~ pd_2group + age_at_diagnosis, 
+                          data = subset(cohort, bmi_2cat == "(25,55]"))
+
+
+# View results
+summary(model_bmi1)
+summary(model_bmi2)
+
+```
+
+```{r}
+# Assuming your data is called 'data' and pd_3group has 3 levels
+# Fit separate models for each density group
+model_pd1 <- coxph(Surv(outcome_date - as.numeric(diadat),death_BC) ~ bmi_2cat + age_at_diagnosis, 
+                          data = subset(cohort, pd_3group == "[0,20]"))
+model_pd2 <- coxph(Surv(outcome_date - as.numeric(diadat),death_BC) ~ bmi_2cat + age_at_diagnosis, 
+                          data = subset(cohort, pd_3group == "(20,40]"))
+model_pd3 <- coxph(Surv(outcome_date - as.numeric(diadat),death_BC) ~ bmi_2cat + age_at_diagnosis, 
+                          data = subset(cohort, pd_3group == "(40,100]"))
+
+
+# View results
+summary(model_pd1)
+
+
+## pd 2 group
+model_pd1 <- coxph(Surv(outcome_date - as.numeric(diadat),death_BC) ~ bmi_2cat + age_at_diagnosis, 
+                          data = subset(cohort, pd_2group == "[0,20]"))
+model_pd2 <- coxph(Surv(outcome_date - as.numeric(diadat),death_BC) ~ bmi_2cat + age_at_diagnosis, 
+                          data = subset(cohort, pd_2group == "(20,100]"))
+
+```
+
+```{r}
+summary(model_pd2)
+```
+
+```{r}
+summary(model_pd3)
+```
+

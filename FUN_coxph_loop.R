@@ -42,9 +42,6 @@ coxph_loop <- function(data, outcome_var, time_var, predictor_vars,
   
   # Loop over each predictor variable
   for (predictor in predictor_vars) {
-    
-    predictor_sym <- rlang::sym(predictor)
-    
     # Build the formula
     if (is.null(covariates)) {
       # Univariable model
@@ -60,7 +57,7 @@ coxph_loop <- function(data, outcome_var, time_var, predictor_vars,
     model_formula <- as.formula(formula_str)
     
     # Create vector of all variables needed (for filtering NAs)
-    all_vars <- c(predictor, covariates)
+    all_vars <- c(predictor, covariates,  outcome_var, time_var)
     
     # If no group_var is provided
     if (is.null(group_var)) {
@@ -72,7 +69,13 @@ coxph_loop <- function(data, outcome_var, time_var, predictor_vars,
         mutate(
           predictor_var = predictor,  # Add predictor variable name
           est = sprintf("%.2f (%.2f, %.2f)", estimate, conf.low, conf.high),
-          p = round(p.value,3)
+          p = round(p.value,3),
+          # Handle both continuous and categorical variables:
+          Level = case_when(
+            term == predictor ~ "",  # For continuous variables (term equals variable name)
+            startsWith(term, predictor) ~ str_remove(term, paste0("^", predictor)),  # For factors
+            TRUE ~ term  # Fallback for any other cases
+          )
         ) %>%
         # Only keep the main predictor term (not covariates)
         filter(term != "(Intercept)" & startsWith(term, predictor))
@@ -91,7 +94,13 @@ coxph_loop <- function(data, outcome_var, time_var, predictor_vars,
         mutate(
           predictor_var = predictor,  # Add predictor variable name
           est = sprintf("%.2f (%.2f, %.2f)", estimate, conf.low, conf.high),
-          p = round(p.value,3)
+          p = round(p.value,3),
+          # Handle both continuous and categorical variables:
+          Level = case_when(
+            term == predictor ~ "",  # For continuous variables (term equals variable name)
+            startsWith(term, predictor) ~ str_remove(term, paste0("^", predictor)),  # For factors
+            TRUE ~ term  # Fallback for any other cases
+          )
         ) %>%
         # Only keep the main predictor term (not covariates)
         filter(term != "(Intercept)" & startsWith(term, predictor))
@@ -107,10 +116,10 @@ coxph_loop <- function(data, outcome_var, time_var, predictor_vars,
   # Select relevant columns based on whether group_var exists
   if (is.null(group_var)) {
     model_results <- model_results %>%
-      select(predictor_var, term, estimate, conf.low, conf.high, p)
+      select(predictor_var, Level, estimate, conf.low, conf.high, p)
   } else {
     model_results <- model_results %>%
-      select(predictor_var, term, estimate, conf.low, conf.high,est, p, !!group_sym)
+      select(predictor_var, Level, estimate, conf.low, conf.high,est, p, !!group_sym)
   }
   
   return(model_results)
